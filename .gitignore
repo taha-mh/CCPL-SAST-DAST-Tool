@@ -1,0 +1,83 @@
+# Python environments
+.venv/
+venv/
+env/
+ENV/
+
+# Python-generated files
+__pycache__/
+*.py[cod]
+*$py.class
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.coverage
+.coverage.*
+htmlcov/
+
+# Environment variables and secrets
+.env
+.env.*
+!.env.example
+secrets/
+*.secret
+*.secrets
+*.pem
+*.key
+*.p12
+*.pfx
+credentials.json
+
+# Local model files and runtimes
+models/
+.ollama/
+*.gguf
+*.safetensors
+*.onnx
+*.pt
+*.pth
+*.ckpt
+
+# Fixed vulnerable target source
+targets/DVWA/
+targets/dvwa/
+
+# Generated scanner data
+data/raw/*
+!data/raw/.gitkeep
+data/normalized/*
+!data/normalized/.gitkeep
+
+# Generated reports
+reports/*
+!reports/.gitkeep
+
+# Logs and temporary runtime files
+logs/
+*.log
+*.tmp
+*.temp
+~$*
+
+# Archives
+*.zip
+*.7z
+*.rar
+*.tar
+*.tar.gz
+*.tgz
+
+# IDE and editor files
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# Operating-system files
+.DS_Store
+Thumbs.db
+Desktop.ini
+$RECYCLE.BIN/
+
+# Semgrep local cache
+.semgrep/

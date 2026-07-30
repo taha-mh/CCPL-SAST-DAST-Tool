@@ -1,0 +1,5 @@
+semgrep
+fastapi
+uvicorn[standard]
+pydantic
+httpx
