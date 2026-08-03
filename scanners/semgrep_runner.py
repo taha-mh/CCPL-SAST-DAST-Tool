@@ -21,14 +21,17 @@ logger = logging.getLogger(__name__)
 
 
 def get_semgrep_executable() -> str:
-    """Locates the semgrep executable across virtualenv, workspace, and system PATH."""
-    current_file = Path(__file__).resolve()
+    """Locates the semgrep executable across system PATH and active virtualenv."""
+    # Check if 'semgrep' is directly in PATH
+    semgrep_path = shutil.which("semgrep")
+    if semgrep_path:
+        return semgrep_path
 
+    # Check active virtualenv Scripts folder (Windows) or bin folder (Linux)
+    venv_dir = Path(sys.executable).parent
     possible_paths = [
-        Path(sys.executable).parent / "semgrep.exe",
-        Path(sys.executable).parent / "semgrep",
-        current_file.parents[2] / ".venv" / "Scripts" / "semgrep.exe",
-        current_file.parents[1] / ".venv" / "Scripts" / "semgrep.exe",
+        venv_dir / "semgrep.exe",
+        venv_dir / "semgrep",
         Path(sys.prefix) / "Scripts" / "semgrep.exe",
         Path(sys.prefix) / "bin" / "semgrep",
     ]
@@ -36,10 +39,6 @@ def get_semgrep_executable() -> str:
     for p in possible_paths:
         if p.exists():
             return str(p)
-
-    semgrep_path = shutil.which("semgrep")
-    if semgrep_path:
-        return semgrep_path
 
     return "semgrep"
 
@@ -87,14 +86,8 @@ def run_semgrep_scan(
     ]
 
     try:
-        # Run Semgrep command with UTF-8 encoding & replace fallback for Windows console
-        result = subprocess.run(
-            cmd,
-            capture_output=True,
-            encoding="utf-8",
-            errors="replace",
-            check=False,
-        )
+        # Run Semgrep command
+        result = subprocess.run(cmd, capture_output=True, text=True, check=False)
 
         if result.returncode not in (0, 1):  # 0 = clean, 1 = findings found
             logger.warning(f"Semgrep exited with code {result.returncode}. Stderr: {result.stderr.strip()}")
@@ -105,8 +98,8 @@ def run_semgrep_scan(
             logger.error(error_msg)
             return {"status": "error", "error": error_msg, "findings_count": 0}
 
-        # Load raw JSON with UTF-8 encoding and replace fallback for special characters
-        with open(output_path, "r", encoding="utf-8", errors="replace") as f:
+        # Load raw JSON to verify structure and count findings
+        with open(output_path, "r", encoding="utf-8") as f:
             raw_data = json.load(f)
 
         findings_count = len(raw_data.get("results", []))

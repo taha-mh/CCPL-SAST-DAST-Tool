@@ -13,8 +13,9 @@ You must evaluate whether the finding represents a plausible security vulnerabil
 
 STRICT REQUIREMENTS:
 1. Base your judgment strictly on the provided source code lines and rule metadata.
-2. Return your response ONLY as a single valid JSON object.
-3. Do NOT include Markdown formatting (such as ```json codeblocks) or conversational intro text.
+2. Keep all text explanations (reasoning, impact, remediation) concise (maximum 1-2 short sentences each).
+3. Return your response ONLY as a single valid JSON object.
+4. Do NOT include Markdown formatting (such as ```json codeblocks) or conversational intro text.
 
 REQUIRED JSON SCHEMA:
 {

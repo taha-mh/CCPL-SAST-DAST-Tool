@@ -1,11 +1,11 @@
 """
-LLM Assessor Module for CCPL Web SAST Tool.
+LLM Reviewer Module for CCPL Web SAST Tool.
 
 Responsibility:
-1. Load enriched findings from data/normalized/findings_with_context.json.
-2. Send each finding and code context to local Ollama (qwen3:8b) API using the requests library.
-3. Parse and validate the LLM's structured JSON assessment.
-4. Save results to data/normalized/assessed_findings.json.
+1. Load assessed findings from data/normalized/assessed_findings.json.
+2. Perform a 2nd logical review pass using local Ollama (qwen3:8b) API.
+3. Classify findings into 'confirmed', 'rejected', or 'needs_review'.
+4. Save reviewed findings to data/normalized/reviewed_findings.json.
 """
 
 import json
@@ -16,7 +16,7 @@ import requests
 
 # Import prompt templates
 sys.path.append(str(Path(__file__).resolve().parents[1]))
-from prompts.assessor_prompt import ASSESSOR_SYSTEM_PROMPT, build_assessor_user_prompt
+from prompts.reviewer_prompt import REVIEWER_SYSTEM_PROMPT, build_reviewer_user_prompt
 
 # Configure logging
 logging.basicConfig(level=logging.INFO, format="[%(asctime)s] %(levelname)s: %(message)s")
@@ -28,13 +28,12 @@ DEFAULT_MODEL = "qwen3:8b"
 
 def query_ollama(system_prompt: str, user_prompt: str, model: str = DEFAULT_MODEL) -> dict:
     """
-    Sends a chat request to the local Ollama API using the requests library
-    and returns the parsed JSON response.
+    Sends a chat request to the local Ollama API using the requests library.
 
-    :param system_prompt: Instructions defining the LLM role and schema.
-    :param user_prompt: Finding details and code context.
+    :param system_prompt: Instructions defining the reviewer role and schema.
+    :param user_prompt: Assessed finding details and initial AI diagnosis.
     :param model: Ollama model name (default: qwen3:8b).
-    :return: Parsed JSON assessment dictionary from the LLM.
+    :return: Parsed JSON review verdict dictionary from the LLM.
     """
     payload = {
         "model": model,
@@ -44,7 +43,7 @@ def query_ollama(system_prompt: str, user_prompt: str, model: str = DEFAULT_MODE
         ],
         "format": "json",
         "stream": False,
-        "keep_alive": "30m",  # Keep model loaded in RAM for 30 minutes so it doesn't reload
+        "keep_alive": "30m",
         "options": {
             "temperature": 0.2,   # Low temperature for deterministic reasoning
             "num_predict": 1024,  # Allow up to 1024 tokens so Qwen3 reasoning completes
@@ -53,9 +52,8 @@ def query_ollama(system_prompt: str, user_prompt: str, model: str = DEFAULT_MODE
     }
 
     try:
-        # Use requests.post to send JSON payload with a 300-second timeout
         response = requests.post(OLLAMA_API_URL, json=payload, timeout=300)
-        response.raise_for_status()  # Raises HTTPError if status code is 4xx/5xx
+        response.raise_for_status()
 
         # Safely decode UTF-8 response bytes to avoid Windows cp1252 charmap errors
         raw_text = response.content.decode("utf-8", errors="replace")
@@ -72,64 +70,62 @@ def query_ollama(system_prompt: str, user_prompt: str, model: str = DEFAULT_MODE
             cleaned_content = cleaned_content[:-3]
         cleaned_content = cleaned_content.strip()
 
-        # Parse the inner JSON string returned by Qwen3
         try:
-            assessment = json.loads(cleaned_content)
-            return assessment
+            review = json.loads(cleaned_content)
+            return review
         except json.JSONDecodeError:
             logger.warning(f"Could not parse LLM JSON response string: {message_content[:100]}")
             return {
-                "is_plausible": False,
-                "vulnerability_type": "JSON_PARSE_ERROR",
-                "severity": "LOW",
-                "reasoning": f"LLM returned invalid JSON string: {message_content[:200]}",
-                "raw_response": message_content,
+                "decision": "needs_review",
+                "review_reason": f"LLM returned invalid JSON response: {message_content[:200]}",
+                "final_severity": "LOW",
+                "confidence": "LOW",
             }
 
     except Exception as e:
         logger.error(f"Failed to communicate with Ollama API at {OLLAMA_API_URL}: {e}")
         return {
-            "is_plausible": False,
+            "decision": "needs_review",
             "error": f"Ollama connection error: {str(e)}",
         }
 
 
-def run_llm_assessor(
-    input_json_path: str = "data/normalized/findings_with_context.json",
-    output_json_path: str = "data/normalized/assessed_findings.json",
-    max_findings: int = 3,  # Set to 3 for test runs; pass None to process all 85 findings
+def run_llm_reviewer(
+    input_json_path: str = "data/normalized/assessed_findings.json",
+    output_json_path: str = "data/normalized/reviewed_findings.json",
+    max_findings: int = 3,  # Set to 3 for test runs; pass None to process all findings
 ) -> list:
     """
-    Processes findings through local Qwen3 8B LLM via Ollama and saves assessments.
+    Processes assessed findings through local Qwen3 8B LLM for a 2nd pass review.
 
-    :param input_json_path: Path to findings with code context.
-    :param output_json_path: Path to save LLM assessed findings.
-    :param max_findings: Max number of findings to assess.
-    :return: List of assessed finding dictionaries.
+    :param input_json_path: Path to assessed findings JSON.
+    :param output_json_path: Path to save final reviewed findings JSON.
+    :param max_findings: Max number of findings to review.
+    :return: List of reviewed finding dictionaries.
     """
     input_file = Path(input_json_path).resolve()
     output_file = Path(output_json_path).resolve()
 
     if not input_file.exists():
-        logger.error(f"Input findings file not found at: {input_file}")
+        logger.error(f"Input assessed findings file not found at: {input_file}")
         return []
 
-    logger.info(f"Loading findings from: {input_file}")
+    logger.info(f"Loading assessed findings from: {input_file}")
     with open(input_file, "r", encoding="utf-8", errors="replace") as f:
         findings = json.load(f)
 
     target_findings = findings[:max_findings] if max_findings else findings
-    logger.info(f"Running LLM Assessor (Qwen3 8B) on {len(target_findings)} findings...")
+    logger.info(f"Running LLM Reviewer (Qwen3 8B 2nd Pass) on {len(target_findings)} findings...")
 
     for index, finding in enumerate(target_findings, start=1):
         finding_id = finding.get("finding_id", f"FINDING-{index}")
-        logger.info(f"[{index}/{len(target_findings)}] Assessing {finding_id} ({finding.get('rule_id')})...")
+        logger.info(f"[{index}/{len(target_findings)}] Reviewing {finding_id} ({finding.get('rule_id')})...")
 
-        user_prompt = build_assessor_user_prompt(finding)
-        assessment = query_ollama(ASSESSOR_SYSTEM_PROMPT, user_prompt)
+        user_prompt = build_reviewer_user_prompt(finding)
+        review_verdict = query_ollama(REVIEWER_SYSTEM_PROMPT, user_prompt)
 
-        # Attach LLM assessment to finding dictionary
-        finding["llm_assessment"] = assessment
+        # Attach 2nd pass LLM review verdict to finding dictionary
+        finding["llm_review"] = review_verdict
 
     # Ensure output directory exists
     output_file.parent.mkdir(parents=True, exist_ok=True)
@@ -137,20 +133,20 @@ def run_llm_assessor(
     with open(output_file, "w", encoding="utf-8") as f:
         json.dump(target_findings, f, indent=2, ensure_ascii=False)
 
-    logger.info(f"Successfully assessed {len(target_findings)} findings!")
-    logger.info(f"Saved assessed findings to: {output_file}")
+    logger.info(f"Successfully reviewed {len(target_findings)} findings!")
+    logger.info(f"Saved reviewed findings to: {output_file}")
 
     return target_findings
 
 
 if __name__ == "__main__":
-    print("--- Running Milestone 5: LLM Assessor (Qwen3 8B) Test ---")
-    results = run_llm_assessor(max_findings=3)  # Set to process 3 findings for test
-    print(f"\nTotal Assessed Findings: {len(results)}")
+    print("--- Running Milestone 6: LLM Reviewer (Qwen3 8B 2nd Pass) Test ---")
+    results = run_llm_reviewer(max_findings=3)
+    print(f"\nTotal Reviewed Findings: {len(results)}")
     if results:
-        print("\nSample Assessed Finding (First Item):")
+        print("\nSample Reviewed Finding (First Item):")
         sample = results[0]
         print(f"ID: {sample.get('finding_id')}")
         print(f"Rule: {sample.get('rule_id')}")
-        print("\n--- LLM Assessment Output ---")
-        print(json.dumps(sample.get("llm_assessment"), indent=2))
+        print("\n--- LLM Review Verdict ---")
+        print(json.dumps(sample.get("llm_review"), indent=2))
