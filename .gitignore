@@ -49,7 +49,9 @@ data/normalized/*
 !data/normalized/.gitkeep
 
 # Generated reports
-reports/*
+reports/*.html
+reports/*.md
+reports/*.pdf
 !reports/.gitkeep
 
 # Logs and temporary runtime files
