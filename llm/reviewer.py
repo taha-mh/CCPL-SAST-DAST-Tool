@@ -73,13 +73,14 @@ def query_ollama(system_prompt: str, user_prompt: str, model: str = DEFAULT_MODE
         try:
             review = json.loads(cleaned_content)
             return review
-        except json.JSONDecodeError:
-            logger.warning(f"Could not parse LLM JSON response string: {message_content[:100]}")
+        except json.JSONDecodeError as err:
+            logger.warning(f"Could not parse LLM JSON response string ({err}): {message_content[:200]}")
             return {
                 "decision": "needs_review",
-                "review_reason": f"LLM returned invalid JSON response: {message_content[:200]}",
+                "review_reason": f"LLM returned non-JSON string ({err}): {message_content[:200]}",
                 "final_severity": "LOW",
                 "confidence": "LOW",
+                "raw_response": message_content,
             }
 
     except Exception as e:
