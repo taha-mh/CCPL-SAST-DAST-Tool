@@ -1,12 +1,12 @@
 /**
- * CCPL Web SAST Dashboard - Real-Time Streaming JavaScript Logic
+ * CCPL Web SAST Dashboard - Real-Time Streaming & Interactive JavaScript Logic
  *
  * Responsibilities:
  * 1. Fetch available target projects from GET /api/targets on page load.
  * 2. Connect to Server-Sent Events (SSE) stream GET /api/scan/stream on scan trigger.
- * 3. Stream real-time timestamped logs line-by-line into the live console window.
+ * 3. Stream real-time timestamped logs line-by-line into the ultra-readable terminal window.
  * 4. Dynamically highlight active pipeline step indicators in the 6-step pathway bar.
- * 5. Render final summary metrics, report download buttons, and finding cards upon completion.
+ * 5. Render final summary metrics, report download buttons, and interactive finding cards upon completion.
  */
 
 document.addEventListener('DOMContentLoaded', () => {
@@ -112,6 +112,7 @@ function handleScanSubmit() {
 
 /**
  * Appends a timestamped line to the live terminal console output window.
+ * Formats step badges [Step X/6] cleanly for high contrast and readability.
  */
 function appendConsoleLog(timestamp, message, level = 'info') {
     const consoleOutput = document.getElementById('console-output');
@@ -121,7 +122,10 @@ function appendConsoleLog(timestamp, message, level = 'info') {
     const isSuccess = message.startsWith('✅') || message.startsWith('🚀');
     if (isSuccess) line.className += ' success';
 
-    line.innerHTML = `<span class="ts">[${timestamp}]</span> ${message}`;
+    // Format [Step X/6] into clean cyan tag badge
+    let formattedMsg = message.replace(/(\[Step \d\/6\])/g, '<span class="tag">$1</span>');
+
+    line.innerHTML = `<span class="ts">[${timestamp}]</span> ${formattedMsg}`;
     consoleOutput.appendChild(line);
     consoleOutput.scrollTop = consoleOutput.scrollHeight;
 }
