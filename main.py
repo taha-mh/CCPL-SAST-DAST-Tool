@@ -1,21 +1,23 @@
 """
-FastAPI Server for CCPL Web SAST Application.
+FastAPI Server for CCPL Web SAST Application with Real-Time Event Streaming.
 
 Responsibility:
 1. Provide REST API endpoints for frontend UI interaction.
 2. List available scan targets in targets/ directory.
-3. Orchestrate full 6-step SAST pipeline upon scan request.
+3. Stream real-time 6-step SAST pipeline execution logs to frontend via Server-Sent Events (SSE).
 4. Serve static frontend dashboard assets (frontend/).
 5. Provide downloadable HTML and Markdown report files.
 """
 
+import asyncio
 import json
 import logging
+from datetime import datetime
 from pathlib import Path
 from typing import Optional
 
 from fastapi import FastAPI, HTTPException, Query
-from fastapi.responses import FileResponse
+from fastapi.responses import FileResponse, StreamingResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, Field
 
@@ -45,13 +47,6 @@ REPORTS_DIR = BASE_DIR / "reports"
 FRONTEND_DIR = BASE_DIR / "frontend"
 
 
-# --- Pydantic Data Models ---
-class ScanRequest(BaseModel):
-    target_name: str = Field(default="DVWA", description="Subfolder name inside targets/ directory")
-    max_findings: Optional[int] = Field(default=3, description="Max findings to process through AI (set None for all)")
-    include_pattern: Optional[str] = Field(default="*.php", description="Glob file pattern filter (e.g. *.php)")
-
-
 # --- API Routes ---
 
 @app.get("/api/targets", summary="List available scan targets")
@@ -67,98 +62,127 @@ def list_targets():
     return {"targets": sorted(targets)}
 
 
-@app.post("/api/scan", summary="Run full 6-step SAST Scan Pipeline")
-def trigger_sast_scan(request: ScanRequest):
+@app.get("/api/scan/stream", summary="Stream full 6-step SAST Scan Pipeline with real-time logs")
+async def stream_sast_scan(
+    target_name: str = Query(default="DVWA"),
+    max_findings: Optional[str] = Query(default="3"),
+    include_pattern: Optional[str] = Query(default="*.php"),
+):
     """
-    Orchestrates the entire Web SAST pipeline:
-    1. Semgrep Scanner Wrapper
-    2. Semgrep Normalizer
-    3. Source Context Extractor
-    4. Pass 1 LLM Assessor
-    5. Pass 2 LLM Reviewer
-    6. Report Generator
+    Streams real-time logs for the 6-step SAST pipeline to the frontend via Server-Sent Events (SSE).
     """
-    target_path = TARGETS_DIR / request.target_name
+    target_path = TARGETS_DIR / target_name
     if not target_path.exists() or not target_path.is_dir():
-        raise HTTPException(
-            status_code=404,
-            detail=f"Target directory '{request.target_name}' not found under targets/"
-        )
+        async def error_generator():
+            yield f"data: {json.dumps({'type': 'error', 'message': f'Target directory {target_name} not found'})}\n\n"
+        return StreamingResponse(error_generator(), media_type="text/event-stream")
 
-    logger.info(f"--- Starting Full SAST Scan Pipeline for Target: {request.target_name} ---")
+    # Handle max_findings conversion (None or int)
+    parsed_max = None if max_findings == "all" or max_findings is None else int(max_findings)
 
-    try:
-        # Step 1: Semgrep Scanner
-        logger.info("[Step 1/6] Running Semgrep Scanner...")
-        scan_res = run_semgrep_scan(
-            target_dir=str(target_path),
-            output_file="data/raw/semgrep_findings.json",   
-            include_pattern=request.include_pattern,
-        )
-        if scan_res.get("status") == "error":
-            raise HTTPException(status_code=500, detail=f"Semgrep scanner failed: {scan_res.get('error')}")
+    async def event_generator():
+        try:
+            def log(step_id, message, level="info", active_step=None):
+                timestamp = datetime.now().strftime("%H:%M:%S")
+                payload = {
+                    "type": "log",
+                    "step_id": step_id,
+                    "active_step": active_step or step_id,
+                    "timestamp": timestamp,
+                    "message": message,
+                    "level": level,
+                }
+                return f"data: {json.dumps(payload)}\n\n"
 
-        # Step 2: Findings Normalizer
-        logger.info("[Step 2/6] Normalizing Semgrep Findings...")
-        norm_findings = normalize_semgrep_findings(
-            raw_json_path="data/raw/semgrep_findings.json",
-            output_normalized_path="data/normalized/normalized_findings.json",
-        )
+            yield log("start", f"🚀 Starting SAST Scan Pipeline for Target: {target_name}...", active_step="scanner")
+            await asyncio.sleep(0.3)
 
-        # Step 3: Source Context Extractor
-        logger.info("[Step 3/6] Extracting Source Code Context...")
-        context_findings = extract_source_context(
-            normalized_json_path="data/normalized/normalized_findings.json",
-            output_json_path="data/normalized/findings_with_context.json",
-        )
+            # Step 1: Semgrep Scanner
+            yield log("scanner", f"[Step 1/6] Running Semgrep Scanner on {target_name} (Filter: {include_pattern})...", active_step="scanner")
+            scan_res = run_semgrep_scan(
+                target_dir=str(target_path),
+                output_file="data/raw/semgrep_findings.json",
+                include_pattern=include_pattern,
+            )
+            raw_count = scan_res.get("findings_count", 0)
+            yield log("scanner", f"✅ Step 1 Complete: Semgrep detected {raw_count} raw findings.", active_step="normalizer")
+            await asyncio.sleep(0.3)
 
-        # Step 4: Pass 1 LLM Assessor
-        logger.info(f"[Step 4/6] Running Pass 1 LLM Assessor (max_findings={request.max_findings})...")
-        assessed_findings = run_llm_assessor(
-            input_json_path="data/normalized/findings_with_context.json",
-            output_json_path="data/normalized/assessed_findings.json",
-            max_findings=request.max_findings,
-        )
+            # Step 2: Normalizer
+            yield log("normalizer", f"[Step 2/6] Normalizing {raw_count} raw findings into unified schema...", active_step="normalizer")
+            norm_findings = normalize_semgrep_findings(
+                raw_json_path="data/raw/semgrep_findings.json",
+                output_normalized_path="data/normalized/normalized_findings.json",
+            )
+            yield log("normalizer", f"✅ Step 2 Complete: Normalized {len(norm_findings)} findings.", active_step="context")
+            await asyncio.sleep(0.3)
 
-        # Step 5: Pass 2 LLM Reviewer
-        logger.info(f"[Step 5/6] Running Pass 2 LLM Reviewer (max_findings={request.max_findings})...")
-        reviewed_findings = run_llm_reviewer(
-            input_json_path="data/normalized/assessed_findings.json",
-            output_json_path="data/normalized/reviewed_findings.json",
-            max_findings=request.max_findings,
-        )
+            # Step 3: Source Context
+            yield log("context", f"[Step 3/6] Extracting ±10 lines of surrounding source code context...", active_step="context")
+            context_findings = extract_source_context(
+                normalized_json_path="data/normalized/normalized_findings.json",
+                output_json_path="data/normalized/findings_with_context.json",
+            )
+            yield log("context", f"✅ Step 3 Complete: Attached source code context to {len(context_findings)} findings.", active_step="llm")
+            await asyncio.sleep(0.3)
 
-        # Step 6: Report Generator
-        logger.info("[Step 6/6] Generating Security Reports (HTML & Markdown)...")
-        report_res = run_report_generator(
-            input_json_path="data/normalized/reviewed_findings.json",
-            output_md_path="reports/sast_report.md",
-            output_html_path="reports/sast_report.html",
-        )
+            # Step 4: LLM Assessor (Pass 1)
+            target_count = len(context_findings[:parsed_max]) if parsed_max else len(context_findings)
+            yield log("llm", f"[Step 4/6] Running Pass 1 AI Assessor (qwen3:8b) on {target_count} findings...", active_step="llm")
+            assessed_findings = run_llm_assessor(
+                input_json_path="data/normalized/findings_with_context.json",
+                output_json_path="data/normalized/assessed_findings.json",
+                max_findings=parsed_max,
+            )
+            yield log("llm", f"✅ Step 4 Complete: AI Assessor evaluated {len(assessed_findings)} findings.", active_step="llm")
+            await asyncio.sleep(0.3)
 
-        # Calculate summary stats for response
-        confirmed_count = sum(
-            1 for f in reviewed_findings
-            if f.get("llm_review", {}).get("decision") == "confirmed"
-            or (not f.get("llm_review", {}).get("decision") and f.get("llm_assessment", {}).get("is_plausible") is True)
-        )
-        discarded_count = len(reviewed_findings) - confirmed_count
+            # Step 5: LLM Reviewer (Pass 2)
+            yield log("llm", f"[Step 5/6] Running Pass 2 AI Senior Reviewer for false-positive elimination...", active_step="llm")
+            reviewed_findings = run_llm_reviewer(
+                input_json_path="data/normalized/assessed_findings.json",
+                output_json_path="data/normalized/reviewed_findings.json",
+                max_findings=parsed_max,
+            )
+            yield log("llm", f"✅ Step 5 Complete: AI Senior Reviewer completed 2nd-pass verdicts.", active_step="reports")
+            await asyncio.sleep(0.3)
 
-        return {
-            "status": "success",
-            "target": request.target_name,
-            "total_evaluated": len(reviewed_findings),
-            "confirmed_vulnerabilities": confirmed_count,
-            "discarded_false_positives": discarded_count,
-            "reviewed_findings": reviewed_findings,
-            "reports": report_res,
-        }
+            # Step 6: Report Generator
+            yield log("reports", f"[Step 6/6] Generating sast_report.html and sast_report.md...", active_step="reports")
+            report_res = run_report_generator(
+                input_json_path="data/normalized/reviewed_findings.json",
+                output_md_path="reports/sast_report.md",
+                output_html_path="reports/sast_report.html",
+            )
+            yield log("reports", "✅ Step 6 Complete: HTML & Markdown security reports generated successfully!", active_step="done")
+            await asyncio.sleep(0.3)
 
-    except HTTPException:
-        raise
-    except Exception as e:
-        logger.exception(f"Pipeline execution failed: {e}")
-        raise HTTPException(status_code=500, detail=f"Pipeline error: {str(e)}")
+            # Calculate stats
+            confirmed_count = sum(
+                1 for f in reviewed_findings
+                if f.get("llm_review", {}).get("decision") == "confirmed"
+                or (not f.get("llm_review", {}).get("decision") and f.get("llm_assessment", {}).get("is_plausible") is True)
+            )
+            discarded_count = len(reviewed_findings) - confirmed_count
+
+            final_payload = {
+                "type": "result",
+                "status": "success",
+                "target": target_name,
+                "total_evaluated": len(reviewed_findings),
+                "confirmed_vulnerabilities": confirmed_count,
+                "discarded_false_positives": discarded_count,
+                "reviewed_findings": reviewed_findings,
+                "reports": report_res,
+            }
+            yield f"data: {json.dumps(final_payload)}\n\n"
+
+        except Exception as e:
+            logger.exception(f"Pipeline error during stream: {e}")
+            err_payload = {"type": "error", "message": f"Pipeline execution failed: {str(e)}"}
+            yield f"data: {json.dumps(err_payload)}\n\n"
+
+    return StreamingResponse(event_generator(), media_type="text/event-stream")
 
 
 @app.get("/api/reports/html", summary="Download/View HTML Security Report")

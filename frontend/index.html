@@ -7,7 +7,7 @@
     <!-- Google Fonts for Modern Typography -->
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-    <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;600;700&family=Fira+Code:wght@400;500&display=swap" rel="stylesheet">
+    <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;500;600;700&family=Fira+Code:wght@400;500&display=swap" rel="stylesheet">
     <!-- Static Stylesheet -->
     <link rel="stylesheet" href="/static/style.css">
 </head>
@@ -30,9 +30,13 @@
 
         <!-- Main Dashboard Content -->
         <main class="dashboard-grid">
-            <!-- Left Control Panel -->
+            <!-- Left Control Panel (Glowing Cyan Accent) -->
             <section class="card control-card">
-                <h2>⚙️ Scan Control Panel</h2>
+                <div class="card-title">
+                    <span class="gear-icon">⚙️</span>
+                    <h2>Scan Control Panel</h2>
+                </div>
+                
                 <form id="scan-form" onsubmit="return false;">
                     <div class="form-group">
                         <label for="target-select">Select Target Project:</label>
@@ -55,7 +59,8 @@
                     </div>
 
                     <button id="scan-btn" class="btn btn-primary">
-                        <span id="btn-text">🚀 Start SAST Scan</span>
+                        <span id="btn-icon">⚡</span>
+                        <span id="btn-text">Start SAST Scan</span>
                     </button>
                 </form>
             </section>
@@ -64,21 +69,64 @@
             <section class="results-panel">
                 <!-- Summary Metric Cards -->
                 <div class="stats-row">
-                    <div class="stat-card">
+                    <div class="stat-card metric-evaluated">
                         <span class="stat-label">Evaluated Findings</span>
-                        <span id="stat-total" class="stat-value">0</span>
+                        <span id="stat-total" class="stat-value text-blue">0</span>
                     </div>
-                    <div class="stat-card stat-confirmed">
+                    <div class="stat-card metric-confirmed">
                         <span class="stat-label">Confirmed Risks</span>
                         <span id="stat-confirmed" class="stat-value text-red">0</span>
                     </div>
-                    <div class="stat-card stat-discarded">
+                    <div class="stat-card metric-discarded">
                         <span class="stat-label">False Positives Discarded</span>
                         <span id="stat-discarded" class="stat-value text-green">0</span>
                     </div>
                 </div>
 
-                <!-- Report Action Bar -->
+                <!-- Active Scan Central Processing Panel -->
+                <div id="processing-panel" class="card processing-card">
+                    <!-- Circular Blue Loading Spinner -->
+                    <div id="spinner-container" class="spinner-group hidden">
+                        <div class="blue-spinner"></div>
+                        <h3 id="status-title">Executing 6-Step SAST Pipeline...</h3>
+                    </div>
+
+                    <!-- Live Real-Time Console Terminal Log Box -->
+                    <div id="console-wrapper" class="console-wrapper hidden">
+                        <div class="console-header">
+                            <span class="console-dot red"></span>
+                            <span class="console-dot yellow"></span>
+                            <span class="console-dot green"></span>
+                            <span class="console-title">Live Pipeline Execution Logs</span>
+                        </div>
+                        <div id="console-output" class="console-output"></div>
+                    </div>
+
+                    <!-- Single Clean Step Indicator Pathway (Matches Reference Image) -->
+                    <div id="pipeline-pathway" class="pipeline-pathway">
+                        <div class="step-item" id="step-scanner">
+                            <span class="step-icon">🔍</span>
+                            <span class="step-label">Semgrep Scanning</span>
+                        </div>
+                        <span class="arrow">➔</span>
+                        <div class="step-item" id="step-normalizer">
+                            <span class="step-icon">📊</span>
+                            <span class="step-label">Normalizing</span>
+                        </div>
+                        <span class="arrow">➔</span>
+                        <div class="step-item" id="step-context">
+                            <span class="step-icon">📄</span>
+                            <span class="step-label">Source Context</span>
+                        </div>
+                        <span class="arrow">➔</span>
+                        <div class="step-item" id="step-llm">
+                            <span class="step-icon">🤖</span>
+                            <span class="step-label">Qwen3:8b Pass 1 & Pass 2 Review</span>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Report Action Bar (Appears when scan finishes) -->
                 <div id="report-actions" class="card actions-card hidden">
                     <div class="actions-header">
                         <h3>📊 Download Security Reports</h3>
@@ -93,21 +141,8 @@
                     </div>
                 </div>
 
-                <!-- Loading Progress Spinner -->
-                <div id="loading-spinner" class="card loading-card hidden">
-                    <div class="spinner"></div>
-                    <h3>Executing 6-Step SAST Pipeline...</h3>
-                    <p class="loading-subtext">Semgrep Scanning ➔ Normalizing ➔ Source Context ➔ Qwen3 8B Pass 1 & Pass 2 Review</p>
-                </div>
-
-                <!-- Findings Container -->
-                <div id="findings-container" class="findings-feed">
-                    <div class="empty-state card">
-                        <span class="empty-icon">🔍</span>
-                        <h3>No Scan Executed Yet</h3>
-                        <p>Select a target project on the left and click <strong>"Start SAST Scan"</strong> to evaluate vulnerabilities.</p>
-                    </div>
-                </div>
+                <!-- Dynamic Findings List Container -->
+                <div id="findings-container" class="findings-feed"></div>
             </section>
         </main>
     </div>
