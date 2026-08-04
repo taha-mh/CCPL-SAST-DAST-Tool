@@ -47,6 +47,7 @@ def run_semgrep_scan(
     target_dir: str = "targets/DVWA",
     output_file: str = "data/raw/semgrep_findings.json",
     config_rule: str = "auto",
+    include_pattern: str = "*.php",
 ) -> dict:
     """
     Executes a Semgrep SAST scan against the target directory and outputs raw JSON results.
@@ -54,6 +55,7 @@ def run_semgrep_scan(
     :param target_dir: Relative or absolute path to target source code.
     :param output_file: Filepath where raw JSON output will be saved.
     :param config_rule: Semgrep ruleset configuration (default: 'auto' or 'p/default').
+    :param include_pattern: Glob pattern to filter target files (default: '*.php' for web app code).
     :return: Dictionary containing scan status, result path, and total findings count.
     """
     target_path = Path(target_dir).resolve()
@@ -72,6 +74,8 @@ def run_semgrep_scan(
     logger.info(f"Using Semgrep binary: {semgrep_bin}")
     logger.info(f"Starting Semgrep scan on target: {target_path}")
     logger.info(f"Using ruleset: {config_rule}")
+    if include_pattern:
+        logger.info(f"Filtering target files by pattern: {include_pattern}")
 
     # Build Semgrep command
     cmd = [
@@ -82,8 +86,12 @@ def run_semgrep_scan(
         "--json",
         "--output",
         str(output_path),
-        str(target_path),
     ]
+
+    if include_pattern:
+        cmd.extend(["--include", include_pattern])
+
+    cmd.append(str(target_path))
 
     try:
         # Run Semgrep command
