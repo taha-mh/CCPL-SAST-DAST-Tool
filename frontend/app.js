@@ -5,7 +5,7 @@
  * 1. Fetch available target projects from GET /api/targets on page load.
  * 2. Connect to Server-Sent Events (SSE) stream GET /api/scan/stream on scan trigger.
  * 3. Stream real-time timestamped logs line-by-line into the live console window.
- * 4. Dynamically highlight active pipeline step indicators in the single step bar.
+ * 4. Dynamically highlight active pipeline step indicators in the 6-step pathway bar.
  * 5. Render final summary metrics, report download buttons, and finding cards upon completion.
  */
 
@@ -131,7 +131,7 @@ function appendConsoleLog(timestamp, message, level = 'info') {
  * Resets step indicator bar classes.
  */
 function resetPipelineSteps() {
-    const steps = ['scanner', 'normalizer', 'context', 'llm', 'reports'];
+    const steps = ['scanner', 'normalizer', 'context', 'assessor', 'reviewer', 'reports'];
     steps.forEach(s => {
         const el = document.getElementById(`step-${s}`);
         if (el) {
@@ -142,10 +142,10 @@ function resetPipelineSteps() {
 
 
 /**
- * Dynamically highlights active and completed steps in the single step bar.
+ * Dynamically highlights active and completed steps in the 6-step pathway bar.
  */
 function updatePipelineStep(activeStep) {
-    const stepOrder = ['scanner', 'normalizer', 'context', 'llm', 'reports'];
+    const stepOrder = ['scanner', 'normalizer', 'context', 'assessor', 'reviewer', 'reports'];
     const activeIndex = stepOrder.indexOf(activeStep);
 
     stepOrder.forEach((step, idx) => {

@@ -98,7 +98,7 @@ async def stream_sast_scan(
             await asyncio.sleep(0.3)
 
             # Step 1: Semgrep Scanner
-            yield log("scanner", f"[Step 1/6] Running Semgrep Scanner on {target_name} (Filter: {include_pattern})...", active_step="scanner")
+            yield log("scanner", f"[Step 1/6] 🔍 Running Semgrep Scanner on {target_name} (Filter: {include_pattern})...", active_step="scanner")
             scan_res = run_semgrep_scan(
                 target_dir=str(target_path),
                 output_file="data/raw/semgrep_findings.json",
@@ -109,7 +109,7 @@ async def stream_sast_scan(
             await asyncio.sleep(0.3)
 
             # Step 2: Normalizer
-            yield log("normalizer", f"[Step 2/6] Normalizing {raw_count} raw findings into unified schema...", active_step="normalizer")
+            yield log("normalizer", f"[Step 2/6] 📊 Normalizing {raw_count} raw findings into unified schema...", active_step="normalizer")
             norm_findings = normalize_semgrep_findings(
                 raw_json_path="data/raw/semgrep_findings.json",
                 output_normalized_path="data/normalized/normalized_findings.json",
@@ -118,37 +118,37 @@ async def stream_sast_scan(
             await asyncio.sleep(0.3)
 
             # Step 3: Source Context
-            yield log("context", f"[Step 3/6] Extracting ±10 lines of surrounding source code context...", active_step="context")
+            yield log("context", f"[Step 3/6] 📄 Extracting ±10 lines of surrounding PHP source code context...", active_step="context")
             context_findings = extract_source_context(
                 normalized_json_path="data/normalized/normalized_findings.json",
                 output_json_path="data/normalized/findings_with_context.json",
             )
-            yield log("context", f"✅ Step 3 Complete: Attached source code context to {len(context_findings)} findings.", active_step="llm")
+            yield log("context", f"✅ Step 3 Complete: Attached source code context to {len(context_findings)} findings.", active_step="assessor")
             await asyncio.sleep(0.3)
 
-            # Step 4: LLM Assessor (Pass 1)
+            # Step 4: Pass 1 AI Assessor
             target_count = len(context_findings[:parsed_max]) if parsed_max else len(context_findings)
-            yield log("llm", f"[Step 4/6] Running Pass 1 AI Assessor (qwen3:8b) on {target_count} findings...", active_step="llm")
+            yield log("assessor", f"[Step 4/6] 🤖 Pass 1 AI Assessor (qwen3:8b) evaluating plausible risks on {target_count} findings...", active_step="assessor")
             assessed_findings = run_llm_assessor(
                 input_json_path="data/normalized/findings_with_context.json",
                 output_json_path="data/normalized/assessed_findings.json",
                 max_findings=parsed_max,
             )
-            yield log("llm", f"✅ Step 4 Complete: AI Assessor evaluated {len(assessed_findings)} findings.", active_step="llm")
+            yield log("assessor", f"✅ Step 4 Complete: Pass 1 AI Assessor evaluated {len(assessed_findings)} findings.", active_step="reviewer")
             await asyncio.sleep(0.3)
 
-            # Step 5: LLM Reviewer (Pass 2)
-            yield log("llm", f"[Step 5/6] Running Pass 2 AI Senior Reviewer for false-positive elimination...", active_step="llm")
+            # Step 5: Pass 2 AI Reviewer
+            yield log("reviewer", f"[Step 5/6] 🛡️ Pass 2 AI Senior Reviewer auditing verdicts for false-positive elimination...", active_step="reviewer")
             reviewed_findings = run_llm_reviewer(
                 input_json_path="data/normalized/assessed_findings.json",
                 output_json_path="data/normalized/reviewed_findings.json",
                 max_findings=parsed_max,
             )
-            yield log("llm", f"✅ Step 5 Complete: AI Senior Reviewer completed 2nd-pass verdicts.", active_step="reports")
+            yield log("reviewer", f"✅ Step 5 Complete: Pass 2 AI Senior Reviewer completed final verdicts.", active_step="reports")
             await asyncio.sleep(0.3)
 
             # Step 6: Report Generator
-            yield log("reports", f"[Step 6/6] Generating sast_report.html and sast_report.md...", active_step="reports")
+            yield log("reports", f"[Step 6/6] 📝 Generating sast_report.html and sast_report.md...", active_step="reports")
             report_res = run_report_generator(
                 input_json_path="data/normalized/reviewed_findings.json",
                 output_md_path="reports/sast_report.md",

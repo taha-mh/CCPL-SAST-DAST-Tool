@@ -30,7 +30,7 @@
 
         <!-- Main Dashboard Content -->
         <main class="dashboard-grid">
-            <!-- Left Control Panel (Glowing Cyan Accent) -->
+            <!-- Left Control Panel -->
             <section class="card control-card">
                 <div class="card-title">
                     <span class="gear-icon">⚙️</span>
@@ -102,11 +102,11 @@
                         <div id="console-output" class="console-output"></div>
                     </div>
 
-                    <!-- Single Clean Step Indicator Pathway (Matches Reference Image) -->
+                    <!-- Clean 6-Step Pipeline Pathway Bar -->
                     <div id="pipeline-pathway" class="pipeline-pathway">
                         <div class="step-item" id="step-scanner">
                             <span class="step-icon">🔍</span>
-                            <span class="step-label">Semgrep Scanning</span>
+                            <span class="step-label">Semgrep Scan</span>
                         </div>
                         <span class="arrow">➔</span>
                         <div class="step-item" id="step-normalizer">
@@ -119,9 +119,19 @@
                             <span class="step-label">Source Context</span>
                         </div>
                         <span class="arrow">➔</span>
-                        <div class="step-item" id="step-llm">
+                        <div class="step-item" id="step-assessor">
                             <span class="step-icon">🤖</span>
-                            <span class="step-label">Qwen3:8b Pass 1 & Pass 2 Review</span>
+                            <span class="step-label">AI Assessor (Pass 1)</span>
+                        </div>
+                        <span class="arrow">➔</span>
+                        <div class="step-item" id="step-reviewer">
+                            <span class="step-icon">🛡️</span>
+                            <span class="step-label">AI Reviewer (Pass 2)</span>
+                        </div>
+                        <span class="arrow">➔</span>
+                        <div class="step-item" id="step-reports">
+                            <span class="step-icon">📝</span>
+                            <span class="step-label">Report Generator</span>
                         </div>
                     </div>
                 </div>
