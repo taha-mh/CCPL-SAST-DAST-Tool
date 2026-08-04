@@ -10,7 +10,6 @@
     
     --brand-indigo: #4f46e5;
     --brand-indigo-hover: #4338ca;
-    --brand-indigo-light: #eeef2e;
     
     --accent-blue-bg: #eff6ff;
     --accent-blue-border: #bfdbfe;
@@ -115,7 +114,7 @@ h1 { font-size: 1.7rem; color: var(--brand-indigo); font-weight: 700; letter-spa
     gap: 1.75rem;
 }
 
-/* Base Card Styling with Hover Lift & Glow */
+/* Base Card Styling */
 .card {
     background: var(--card-bg);
     border: 1px solid var(--card-border);
@@ -186,7 +185,7 @@ label {
     box-shadow: 0 0 0 4px rgba(79, 70, 229, 0.15);
 }
 
-/* Primary Button with Interactive Micro-Animations */
+/* Primary Button */
 .btn {
     display: inline-flex;
     align-items: center;
@@ -215,11 +214,6 @@ label {
     transform: translateY(-2px);
 }
 
-.btn-primary:active {
-    transform: translateY(0);
-    box-shadow: 0 2px 8px rgba(79, 70, 229, 0.3);
-}
-
 .btn-secondary {
     background: #ffffff;
     color: var(--brand-indigo);
@@ -235,7 +229,7 @@ label {
     box-shadow: 0 4px 12px rgba(79, 70, 229, 0.1);
 }
 
-/* Interactive Metric Cards Row */
+/* Metric Cards Row */
 .stats-row {
     display: grid;
     grid-template-columns: repeat(3, 1fr);
@@ -255,29 +249,14 @@ label {
     transform: translateY(-3px) scale(1.02);
 }
 
-.metric-evaluated {
-    background: var(--accent-blue-bg);
-    border: 1px solid var(--accent-blue-border);
-}
-.metric-evaluated:hover {
-    box-shadow: 0 8px 25px rgba(29, 78, 216, 0.15);
-}
+.metric-evaluated { background: var(--accent-blue-bg); border: 1px solid var(--accent-blue-border); }
+.metric-evaluated:hover { box-shadow: 0 8px 25px rgba(29, 78, 216, 0.15); }
 
-.metric-confirmed {
-    background: var(--accent-red-bg);
-    border: 1px solid var(--accent-red-border);
-}
-.metric-confirmed:hover {
-    box-shadow: 0 8px 25px rgba(220, 38, 38, 0.15);
-}
+.metric-confirmed { background: var(--accent-red-bg); border: 1px solid var(--accent-red-border); }
+.metric-confirmed:hover { box-shadow: 0 8px 25px rgba(220, 38, 38, 0.15); }
 
-.metric-discarded {
-    background: var(--accent-green-bg);
-    border: 1px solid var(--accent-green-border);
-}
-.metric-discarded:hover {
-    box-shadow: 0 8px 25px rgba(5, 150, 105, 0.15);
-}
+.metric-discarded { background: var(--accent-green-bg); border: 1px solid var(--accent-green-border); }
+.metric-discarded:hover { box-shadow: 0 8px 25px rgba(5, 150, 105, 0.15); }
 
 .stat-label { font-size: 0.88rem; font-weight: 600; color: var(--text-secondary); }
 .stat-value { display: block; font-size: 2.75rem; font-weight: 700; margin-top: 0.25rem; }
@@ -285,15 +264,45 @@ label {
 .text-red { color: var(--accent-red-text); }
 .text-green { color: var(--accent-green-text); }
 
-/* Processing Panel */
-.processing-card {
-    text-align: center;
-    padding: 2rem 1.6rem;
+/* Interactive Filter Tabs Bar */
+.tab-navigation {
+    display: flex;
+    gap: 0.75rem;
+    margin-bottom: 1.5rem;
+    background: #ffffff;
+    padding: 0.5rem;
+    border-radius: 12px;
+    border: 1px solid var(--card-border);
+    box-shadow: 0 4px 15px rgba(15, 23, 42, 0.02);
 }
 
-.spinner-group {
-    margin-bottom: 1.5rem;
+.tab-btn {
+    flex: 1;
+    padding: 0.75rem 1.2rem;
+    border-radius: 8px;
+    border: 1px solid transparent;
+    background: transparent;
+    font-size: 0.9rem;
+    font-weight: 600;
+    color: var(--text-secondary);
+    cursor: pointer;
+    transition: var(--transition-smooth);
 }
+
+.tab-btn:hover {
+    background: #f1f5f9;
+    color: var(--text-primary);
+}
+
+.tab-btn.active {
+    background: var(--brand-indigo);
+    color: #ffffff;
+    box-shadow: 0 4px 12px rgba(79, 70, 229, 0.25);
+}
+
+/* Processing Panel */
+.processing-card { text-align: center; padding: 2rem 1.6rem; }
+.spinner-group { margin-bottom: 1.5rem; }
 
 .blue-spinner {
     width: 54px;
@@ -310,7 +319,7 @@ label {
     100% { transform: rotate(360deg); }
 }
 
-/* Ultra-Readable High-Contrast Terminal Console Box */
+/* Console Terminal Box */
 .console-wrapper {
     background: #090d16;
     border: 1px solid #1e293b;
@@ -330,16 +339,11 @@ label {
     gap: 0.5rem;
 }
 
-.console-dot {
-    width: 10px;
-    height: 10px;
-    border-radius: 50%;
-}
-
+.console-dot { width: 10px; height: 10px; border-radius: 50%; }
 .console-dot.red { background: #ef4444; }
 .console-dot.yellow { background: #f59e0b; }
 .console-dot.green { background: #10b981; }
-.console-title { font-size: 0.82rem; color: #94a3b8; margin-left: 0.5rem; font-family: 'Fira Code', monospace; font-weight: 500; }
+.console-title { font-size: 0.82rem; color: #94a3b8; margin-left: 0.5rem; font-family: 'Fira Code', monospace; }
 
 .console-output {
     padding: 1.1rem;
@@ -352,13 +356,13 @@ label {
 }
 
 .console-line { margin-bottom: 0.35rem; }
-.console-line .ts { color: #64748b; margin-right: 0.6rem; font-weight: 500; }
+.console-line .ts { color: #64748b; margin-right: 0.6rem; }
 .console-line .tag { color: #38bdf8; font-weight: 700; margin-right: 0.4rem; }
-.console-line.success { color: #34d399; font-weight: 500; }
+.console-line.success { color: #34d399; }
 .console-line.info { color: #f1f5f9; }
-.console-line.error { color: #f87171; font-weight: 600; }
+.console-line.error { color: #f87171; }
 
-/* 6-Step Pipeline Pathway Bar */
+/* Pipeline Pathway */
 .pipeline-pathway {
     display: flex;
     justify-content: center;
@@ -386,11 +390,6 @@ label {
     transition: var(--transition-smooth);
 }
 
-.step-item:hover {
-    transform: translateY(-1px);
-    border-color: #cbd5e1;
-}
-
 .step-item.active {
     background: var(--accent-blue-bg);
     border-color: var(--brand-indigo);
@@ -407,7 +406,7 @@ label {
 
 .arrow { color: #94a3b8; font-weight: bold; }
 
-/* Interactive Finding Cards */
+/* Finding Cards */
 .finding-card {
     background: #ffffff;
     border: 1px solid var(--card-border);
@@ -421,7 +420,6 @@ label {
 .finding-card:hover {
     transform: translateY(-2px);
     box-shadow: 0 10px 30px rgba(15, 23, 42, 0.08);
-    border-color: var(--card-border-hover);
 }
 
 .badge {
@@ -457,12 +455,6 @@ pre {
     margin-top: 0.5rem;
 }
 
-.actions-header {
-    display: flex;
-    justify-content: space-between;
-    align-items: center;
-}
-
+.actions-header { display: flex; justify-content: space-between; align-items: center; }
 .button-group { display: flex; gap: 0.85rem; }
-
 .hidden { display: none !important; }

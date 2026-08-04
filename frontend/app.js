@@ -1,13 +1,16 @@
 /**
- * CCPL Web SAST Dashboard - Real-Time Streaming & Interactive JavaScript Logic
+ * CCPL Web SAST Dashboard - Real-Time Streaming & Interactive Tab Logic
  *
  * Responsibilities:
  * 1. Fetch available target projects from GET /api/targets on page load.
  * 2. Connect to Server-Sent Events (SSE) stream GET /api/scan/stream on scan trigger.
- * 3. Stream real-time timestamped logs line-by-line into the ultra-readable terminal window.
+ * 3. Stream real-time timestamped logs line-by-line into the live console window.
  * 4. Dynamically highlight active pipeline step indicators in the 6-step pathway bar.
- * 5. Render final summary metrics, report download buttons, and interactive finding cards upon completion.
+ * 5. Support interactive Frontend Filter Tabs (Confirmed Risks vs Discarded False Positives vs All).
  */
+
+let currentScanData = null;
+let activeTab = 'confirmed'; // 'confirmed', 'discarded', 'all'
 
 document.addEventListener('DOMContentLoaded', () => {
     fetchTargets();
@@ -16,6 +19,11 @@ document.addEventListener('DOMContentLoaded', () => {
     if (scanBtn) {
         scanBtn.addEventListener('click', handleScanSubmit);
     }
+
+    // Attach Tab Switch Handlers
+    document.getElementById('tab-confirmed-btn').addEventListener('click', () => setTab('confirmed'));
+    document.getElementById('tab-discarded-btn').addEventListener('click', () => setTab('discarded'));
+    document.getElementById('tab-all-btn').addEventListener('click', () => setTab('all'));
 });
 
 
@@ -60,6 +68,7 @@ function handleScanSubmit() {
     const consoleWrapper = document.getElementById('console-wrapper');
     const consoleOutput = document.getElementById('console-output');
     const reportActions = document.getElementById('report-actions');
+    const tabNavigation = document.getElementById('tab-navigation');
     const findingsContainer = document.getElementById('findings-container');
 
     // Reset UI state
@@ -67,6 +76,7 @@ function handleScanSubmit() {
     consoleWrapper.classList.remove('hidden');
     consoleOutput.innerHTML = '';
     reportActions.classList.add('hidden');
+    tabNavigation.classList.add('hidden');
     findingsContainer.innerHTML = '';
     resetPipelineSteps();
 
@@ -89,7 +99,9 @@ function handleScanSubmit() {
             scanBtn.disabled = false;
             scanBtn.innerHTML = '<span>⚡</span><span>Start SAST Scan</span>';
             updatePipelineStep('done');
-            renderResults(data);
+            
+            currentScanData = data;
+            renderDashboard(data);
         } else if (data.type === 'error') {
             eventSource.close();
             spinnerGroup.classList.add('hidden');
@@ -112,7 +124,6 @@ function handleScanSubmit() {
 
 /**
  * Appends a timestamped line to the live terminal console output window.
- * Formats step badges [Step X/6] cleanly for high contrast and readability.
  */
 function appendConsoleLog(timestamp, message, level = 'info') {
     const consoleOutput = document.getElementById('console-output');
@@ -122,7 +133,6 @@ function appendConsoleLog(timestamp, message, level = 'info') {
     const isSuccess = message.startsWith('✅') || message.startsWith('🚀');
     if (isSuccess) line.className += ' success';
 
-    // Format [Step X/6] into clean cyan tag badge
     let formattedMsg = message.replace(/(\[Step \d\/6\])/g, '<span class="tag">$1</span>');
 
     line.innerHTML = `<span class="ts">[${timestamp}]</span> ${formattedMsg}`;
@@ -138,9 +148,7 @@ function resetPipelineSteps() {
     const steps = ['scanner', 'normalizer', 'context', 'assessor', 'reviewer', 'reports'];
     steps.forEach(s => {
         const el = document.getElementById(`step-${s}`);
-        if (el) {
-            el.className = 'step-item';
-        }
+        if (el) el.className = 'step-item';
     });
 }
 
@@ -170,32 +178,80 @@ function updatePipelineStep(activeStep) {
 
 
 /**
- * Renders summary metrics, download action bar, and finding cards upon completion.
+ * Renders summary metrics, tab counters, and shows findings for active tab.
  */
-function renderResults(data) {
-    // Update summary count badges
-    document.getElementById('stat-total').textContent = data.total_evaluated || 0;
-    document.getElementById('stat-confirmed').textContent = data.confirmed_vulnerabilities || 0;
-    document.getElementById('stat-discarded').textContent = data.discarded_false_positives || 0;
+function renderDashboard(data) {
+    const total = data.total_evaluated || 0;
+    const confirmed = data.confirmed_vulnerabilities || 0;
+    const discarded = data.discarded_false_positives || 0;
 
-    // Show Report Download Buttons
-    const reportActions = document.getElementById('report-actions');
-    reportActions.classList.remove('hidden');
+    // Update metric numbers
+    document.getElementById('stat-total').textContent = total;
+    document.getElementById('stat-confirmed').textContent = confirmed;
+    document.getElementById('stat-discarded').textContent = discarded;
+
+    // Update Tab Counts
+    document.getElementById('tab-confirmed-count').textContent = confirmed;
+    document.getElementById('tab-discarded-count').textContent = discarded;
+    document.getElementById('tab-all-count').textContent = total;
+
+    // Show Report Actions & Filter Tabs
+    document.getElementById('report-actions').classList.remove('hidden');
+    document.getElementById('tab-navigation').classList.remove('hidden');
+
+    renderActiveTabFindings();
+}
+
+
+/**
+ * Sets active tab ('confirmed', 'discarded', 'all') and re-renders findings.
+ */
+function setTab(tabName) {
+    activeTab = tabName;
+    
+    document.querySelectorAll('.tab-btn').forEach(btn => btn.classList.remove('active'));
+    document.getElementById(`tab-${tabName}-btn`).classList.add('active');
+
+    renderActiveTabFindings();
+}
+
+
+/**
+ * Filters findings based on activeTab and renders cards.
+ */
+function renderActiveTabFindings() {
+    if (!currentScanData) return;
 
     const container = document.getElementById('findings-container');
-    const findings = data.reviewed_findings || [];
+    container.innerHTML = '';
 
-    if (findings.length === 0) {
+    const allFindings = currentScanData.reviewed_findings || [];
+    
+    let filtered = [];
+    if (activeTab === 'confirmed') {
+        filtered = allFindings.filter(f => {
+            const dec = f.llm_review?.decision || (f.llm_assessment?.is_plausible ? 'confirmed' : 'rejected');
+            return dec === 'confirmed';
+        });
+    } else if (activeTab === 'discarded') {
+        filtered = allFindings.filter(f => {
+            const dec = f.llm_review?.decision || (f.llm_assessment?.is_plausible ? 'confirmed' : 'rejected');
+            return dec !== 'confirmed';
+        });
+    } else {
+        filtered = allFindings;
+    }
+
+    if (filtered.length === 0) {
         container.innerHTML = `
             <div class="card empty-state">
-                <h3>No vulnerabilities detected in the selected target.</h3>
+                <h3>No findings in this section (${activeTab.toUpperCase()}).</h3>
             </div>
         `;
         return;
     }
 
-    // Loop through findings and build HTML cards
-    findings.forEach(f => {
+    filtered.forEach(f => {
         const review = f.llm_review || {};
         const assessment = f.llm_assessment || {};
 
@@ -204,17 +260,21 @@ function renderResults(data) {
 
         const sev = (review.final_severity || assessment.severity || f.scanner_severity || 'LOW').toUpperCase();
         const badgeClass = isConfirmed ? 'badge-high' : 'badge-low';
+        const badgeLabel = isConfirmed ? `CONFIRMED [${sev}]` : `DISCARDED FALSE POSITIVE`;
 
         const reason = review.review_reason || assessment.reasoning || 'No explanation provided.';
         const remediation = assessment.remediation || 'No remediation snippet available.';
 
         const card = document.createElement('div');
         card.className = 'finding-card';
+        if (!isConfirmed) {
+            card.style.borderLeft = '4px solid var(--accent-green-text)';
+        }
 
         card.innerHTML = `
             <div class="finding-header">
                 <div>
-                    <span class="badge ${badgeClass}">${decision.toUpperCase()} [${sev}]</span>
+                    <span class="badge ${badgeClass}">${badgeLabel}</span>
                     <strong style="margin-left: 0.5rem; font-size: 1.1rem;">${f.finding_id}: ${f.title}</strong>
                 </div>
             </div>
@@ -222,13 +282,15 @@ function renderResults(data) {
                 <strong>File:</strong> <code>${f.file_path}</code> (Lines ${f.start_line}-${f.end_line}) | <strong>Rule:</strong> <code>${f.rule_id}</code>
             </p>
 
-            <div class="reasoning-box">
+            <div class="reasoning-box" style="${!isConfirmed ? 'background: var(--accent-green-bg); border-left-color: var(--accent-green-text); color: var(--accent-green-text);' : ''}">
                 <strong>🤖 AI Security Reasoning:</strong>
                 <p style="margin-top: 0.4rem;">${reason}</p>
             </div>
 
-            <strong>🛠️ Remediation Recommendation:</strong>
-            <pre><code>${remediation}</code></pre>
+            ${isConfirmed ? `
+                <strong>🛠️ Remediation Recommendation:</strong>
+                <pre><code>${remediation}</code></pre>
+            ` : ''}
 
             <strong style="display: block; margin-top: 0.75rem;">📄 Source Code Context:</strong>
             <pre><code>${f.code_context || 'No code context snippet available.'}</code></pre>
