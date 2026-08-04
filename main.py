@@ -129,21 +129,35 @@ async def stream_sast_scan(
             # Step 4: Pass 1 AI Assessor
             target_count = len(context_findings[:parsed_max]) if parsed_max else len(context_findings)
             yield log("assessor", f"[Step 4/6] 🤖 Pass 1 AI Assessor (qwen3:8b) evaluating plausible risks on {target_count} findings...", active_step="assessor")
-            assessed_findings = run_llm_assessor(
+            
+            assessor_task = asyncio.create_task(asyncio.to_thread(
+                run_llm_assessor,
                 input_json_path="data/normalized/findings_with_context.json",
                 output_json_path="data/normalized/assessed_findings.json",
                 max_findings=parsed_max,
-            )
+            ))
+            while not assessor_task.done():
+                yield ": keep-alive\n\n"
+                await asyncio.sleep(10)
+            assessed_findings = await assessor_task
+            
             yield log("assessor", f"✅ Step 4 Complete: Pass 1 AI Assessor evaluated {len(assessed_findings)} findings.", active_step="reviewer")
             await asyncio.sleep(0.3)
 
             # Step 5: Pass 2 AI Reviewer
             yield log("reviewer", f"[Step 5/6] 🛡️ Pass 2 AI Senior Reviewer auditing verdicts for false-positive elimination...", active_step="reviewer")
-            reviewed_findings = run_llm_reviewer(
+            
+            reviewer_task = asyncio.create_task(asyncio.to_thread(
+                run_llm_reviewer,
                 input_json_path="data/normalized/assessed_findings.json",
                 output_json_path="data/normalized/reviewed_findings.json",
                 max_findings=parsed_max,
-            )
+            ))
+            while not reviewer_task.done():
+                yield ": keep-alive\n\n"
+                await asyncio.sleep(10)
+            reviewed_findings = await reviewer_task
+            
             yield log("reviewer", f"✅ Step 5 Complete: Pass 2 AI Senior Reviewer completed final verdicts.", active_step="reports")
             await asyncio.sleep(0.3)
 
