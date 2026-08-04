@@ -92,7 +92,7 @@ def trigger_sast_scan(request: ScanRequest):
         logger.info("[Step 1/6] Running Semgrep Scanner...")
         scan_res = run_semgrep_scan(
             target_dir=str(target_path),
-            output_file="data/raw/semgrep_findings.json",
+            output_file="data/raw/semgrep_findings.json",   
             include_pattern=request.include_pattern,
         )
         if scan_res.get("status") == "error":
