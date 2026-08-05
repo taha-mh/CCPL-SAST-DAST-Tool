@@ -26,10 +26,17 @@
     --transition-smooth: all 0.25s cubic-bezier(0.4, 0, 0.2, 1);
 }
 
-* {
+*, *::before, *::after {
     box-sizing: border-box;
     margin: 0;
     padding: 0;
+    min-width: 0; /* CRITICAL: Enables flex & grid items to shrink below min-content size */
+}
+
+html, body {
+    width: 100%;
+    max-width: 100%;
+    overflow-x: hidden !important; /* Strict Page-Level Containment */
 }
 
 body {
@@ -37,14 +44,28 @@ body {
     background-color: var(--bg-main);
     color: var(--text-primary);
     line-height: 1.6;
-    padding: 1.5rem;
-    overflow-x: hidden; /* Prevent horizontal page scroll */
+    padding: 1.25rem;
+}
+
+/* Comprehensive Text Wrapping Rule for All Text & Container Elements */
+p, span, div, strong, h1, h2, h3, h4, h5, h6, a, li, td, th, label, button, input, select {
+    overflow-wrap: anywhere;
+    word-break: break-word;
+    max-width: 100%;
+}
+
+table {
+    width: 100%;
+    max-width: 100%;
+    table-layout: fixed; /* Forces cells to respect container width instead of growing */
 }
 
 .app-container {
     max-width: 1380px;
     margin: 0 auto;
     width: 100%;
+    box-sizing: border-box;
+    overflow-x: hidden;
 }
 
 /* Header Navbar */
@@ -53,20 +74,23 @@ body {
     justify-content: space-between;
     align-items: center;
     background: #ffffff;
-    padding: 1.25rem 2.25rem;
+    padding: 1.1rem 1.75rem;
     border-radius: 16px;
     border: 1px solid var(--card-border);
-    margin-bottom: 2rem;
+    margin-bottom: 1.5rem;
     box-shadow: 0 4px 20px rgba(15, 23, 42, 0.04);
     transition: var(--transition-smooth);
     flex-wrap: wrap;
     gap: 1rem;
+    width: 100%;
+    max-width: 100%;
 }
 
 .logo-group {
     display: flex;
     align-items: center;
     gap: 1.2rem;
+    min-width: 0;
 }
 
 .brand-logo {
@@ -79,20 +103,21 @@ body {
     margin-right: 0.25rem;
 }
 
-h1 { font-size: 1.7rem; color: var(--brand-indigo); font-weight: 700; letter-spacing: -0.5px; }
-.subtitle { font-size: 0.88rem; color: var(--text-muted); font-weight: 500; }
+h1 { font-size: 1.6rem; color: var(--brand-indigo); font-weight: 700; letter-spacing: -0.5px; }
+.subtitle { font-size: 0.85rem; color: var(--text-muted); font-weight: 500; }
 
 .engine-badge {
     background: var(--accent-green-bg);
     border: 1px solid var(--accent-green-border);
     color: var(--accent-green-text);
-    padding: 0.55rem 1.3rem;
+    padding: 0.5rem 1.1rem;
     border-radius: 20px;
     font-size: 0.85rem;
     display: flex;
     align-items: center;
     gap: 0.6rem;
     font-weight: 600;
+    flex-shrink: 0;
 }
 
 .status-dot {
@@ -106,14 +131,17 @@ h1 { font-size: 1.7rem; color: var(--brand-indigo); font-weight: 700; letter-spa
 /* Main Grid Layout - Responsive Column Sizing */
 .dashboard-grid {
     display: grid;
-    grid-template-columns: 340px minmax(0, 1fr); /* minmax(0, 1fr) prevents grid overflow */
-    gap: 1.75rem;
+    grid-template-columns: 320px minmax(0, 1fr); /* minmax(0, 1fr) prevents grid overflow */
+    gap: 1.5rem;
     width: 100%;
+    max-width: 100%;
 }
 
 .results-panel {
     min-width: 0; /* Critical CSS rule to prevent flex/grid item horizontal overflow */
     width: 100%;
+    max-width: 100%;
+    overflow-x: hidden;
 }
 
 /* Base Card Styling */
@@ -121,11 +149,14 @@ h1 { font-size: 1.7rem; color: var(--brand-indigo); font-weight: 700; letter-spa
     background: var(--card-bg);
     border: 1px solid var(--card-border);
     border-radius: 16px;
-    padding: 1.6rem;
-    margin-bottom: 1.5rem;
+    padding: 1.4rem;
+    margin-bottom: 1.25rem;
     box-shadow: 0 4px 15px rgba(15, 23, 42, 0.03);
     transition: var(--transition-smooth);
+    width: 100%;
     max-width: 100%;
+    box-sizing: border-box;
+    overflow-x: hidden;
 }
 
 .card:hover {
@@ -142,32 +173,32 @@ h1 { font-size: 1.7rem; color: var(--brand-indigo); font-weight: 700; letter-spa
     display: flex;
     align-items: center;
     gap: 0.6rem;
-    margin-bottom: 1.4rem;
+    margin-bottom: 1.25rem;
 }
 
-.card-title h2 { font-size: 1.25rem; color: var(--text-primary); font-weight: 700; }
+.card-title h2 { font-size: 1.2rem; color: var(--text-primary); font-weight: 700; }
 
 .form-group {
-    margin-bottom: 1.35rem;
+    margin-bottom: 1.25rem;
 }
 
 label {
     display: block;
-    font-size: 0.88rem;
+    font-size: 0.85rem;
     font-weight: 600;
     color: var(--text-secondary);
-    margin-bottom: 0.5rem;
+    margin-bottom: 0.45rem;
 }
 
 .form-input {
     width: 100%;
-    padding: 0.85rem 1.1rem;
+    padding: 0.8rem 1rem;
     background-color: #f8fafc;
     border: 1px solid var(--card-border);
     border-radius: 10px;
     color: var(--text-primary);
     font-family: inherit;
-    font-size: 0.92rem;
+    font-size: 0.9rem;
 }
 
 /* Primary Button */
@@ -177,10 +208,10 @@ label {
     justify-content: center;
     gap: 0.6rem;
     width: 100%;
-    padding: 0.95rem;
+    padding: 0.9rem;
     border-radius: 10px;
     font-weight: 700;
-    font-size: 0.98rem;
+    font-size: 0.95rem;
     cursor: pointer;
     border: none;
     text-decoration: none;
@@ -204,61 +235,71 @@ label {
     color: var(--brand-indigo);
     border: 1px solid var(--accent-blue-border);
     width: auto;
-    padding: 0.7rem 1.4rem;
+    padding: 0.65rem 1.1rem;
+    font-size: 0.88rem;
 }
 
 /* Responsive Metric Cards Row */
 .stats-row {
     display: grid;
-    grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
-    gap: 1.35rem;
-    margin-bottom: 1.5rem;
+    grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+    gap: 1.1rem;
+    margin-bottom: 1.25rem;
     width: 100%;
+    max-width: 100%;
 }
 
 .stat-card {
     border-radius: 14px;
-    padding: 1.6rem;
+    padding: 1.35rem 1rem;
     text-align: center;
     box-shadow: 0 4px 15px rgba(0,0,0,0.02);
     transition: var(--transition-smooth);
     min-width: 0;
+    max-width: 100%;
 }
 
 .metric-evaluated { background: var(--accent-blue-bg); border: 1px solid var(--accent-blue-border); }
 .metric-confirmed { background: var(--accent-red-bg); border: 1px solid var(--accent-red-border); }
 .metric-discarded { background: var(--accent-green-bg); border: 1px solid var(--accent-green-border); }
 
-.stat-label { font-size: 0.88rem; font-weight: 600; color: var(--text-secondary); }
-.stat-value { display: block; font-size: 2.75rem; font-weight: 700; margin-top: 0.25rem; }
+.stat-label { font-size: 0.85rem; font-weight: 600; color: var(--text-secondary); }
+.stat-value { display: block; font-size: 2.5rem; font-weight: 700; margin-top: 0.2rem; }
 .text-blue { color: var(--accent-blue-text); }
 .text-red { color: var(--accent-red-text); }
 .text-green { color: var(--accent-green-text); }
 
-/* Filter Tabs Bar */
+/* Filter Tabs Bar - Fixed Overflow & Width Containment */
 .tab-navigation {
     display: flex;
-    gap: 0.75rem;
-    margin-bottom: 1.5rem;
+    gap: 0.5rem;
+    margin-bottom: 1.25rem;
     background: #ffffff;
-    padding: 0.5rem;
+    padding: 0.4rem;
     border-radius: 12px;
     border: 1px solid var(--card-border);
     flex-wrap: wrap;
+    width: 100%;
+    max-width: 100%;
+    box-sizing: border-box;
 }
 
 .tab-btn {
-    flex: 1;
-    min-width: 160px;
-    padding: 0.75rem 1.2rem;
+    flex: 1 1 140px;
+    min-width: 130px;
+    padding: 0.7rem 0.85rem;
     border-radius: 8px;
     border: 1px solid transparent;
     background: transparent;
-    font-size: 0.9rem;
+    font-size: 0.88rem;
     font-weight: 600;
     color: var(--text-secondary);
     cursor: pointer;
     transition: var(--transition-smooth);
+    text-align: center;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
 }
 
 .tab-btn.active {
@@ -272,20 +313,30 @@ label {
     background: #090d16;
     border: 1px solid #1e293b;
     border-radius: 12px;
-    margin: 1.5rem 0;
+    margin: 1.25rem 0;
     overflow: hidden;
     text-align: left;
+    width: 100%;
+    max-width: 100%;
 }
 
 .console-output {
-    padding: 1.1rem;
-    max-height: 240px;
+    padding: 1rem;
+    max-height: 220px;
     overflow-y: auto;
+    overflow-x: hidden;
     font-family: 'Fira Code', monospace;
-    font-size: 0.88rem;
-    line-height: 1.65;
+    font-size: 0.85rem;
+    line-height: 1.6;
     color: #f1f5f9;
     word-break: break-all;
+    overflow-wrap: anywhere;
+}
+
+.console-line {
+    word-break: break-all;
+    overflow-wrap: anywhere;
+    max-width: 100%;
 }
 
 /* Pipeline Pathway */
@@ -293,13 +344,45 @@ label {
     display: flex;
     justify-content: center;
     align-items: center;
-    gap: 0.75rem;
+    gap: 0.5rem 0.75rem;
     background: #f8fafc;
-    padding: 1.25rem;
+    padding: 1rem;
     border-radius: 12px;
     border: 1px solid var(--card-border);
     margin-top: 1rem;
     flex-wrap: wrap;
+    width: 100%;
+    max-width: 100%;
+}
+
+.step-item {
+    display: flex;
+    align-items: center;
+    gap: 0.4rem;
+    padding: 0.4rem 0.75rem;
+    border-radius: 8px;
+    font-size: 0.82rem;
+    font-weight: 600;
+    background: #ffffff;
+    border: 1px solid var(--card-border);
+    white-space: nowrap;
+}
+
+.step-item.active {
+    border-color: var(--brand-indigo);
+    background: var(--accent-blue-bg);
+    color: var(--brand-indigo);
+}
+
+.step-item.completed {
+    border-color: var(--accent-green-border);
+    background: var(--accent-green-bg);
+    color: var(--accent-green-text);
+}
+
+.arrow {
+    color: var(--text-muted);
+    font-size: 0.85rem;
 }
 
 /* Finding Cards & Text Wrapping Rules (Strict Anti-Overflow Rules) */
@@ -314,8 +397,8 @@ label {
     background: #ffffff;
     border: 1px solid var(--card-border);
     border-radius: 14px;
-    padding: 1.6rem;
-    margin-bottom: 1.35rem;
+    padding: 1.4rem;
+    margin-bottom: 1.25rem;
     box-shadow: 0 4px 15px rgba(15, 23, 42, 0.03);
     transition: var(--transition-smooth);
     width: 100%;
@@ -342,20 +425,14 @@ code {
     display: inline-block;
 }
 
-p, span, div, strong {
-    overflow-wrap: anywhere;
-    word-break: break-word;
-    max-width: 100%;
-}
-
 pre {
     background: #090d16;
-    padding: 1.1rem;
+    padding: 1rem;
     border-radius: 10px;
     border: 1px solid #1e293b;
     overflow-x: auto;
     font-family: 'Fira Code', monospace;
-    font-size: 0.88rem;
+    font-size: 0.85rem;
     color: #f1f5f9;
     margin-top: 0.5rem;
     white-space: pre-wrap !important;
@@ -370,6 +447,7 @@ pre {
     font-size: 0.78rem;
     font-weight: 700;
     text-transform: uppercase;
+    display: inline-block;
 }
 
 .badge-high { background: var(--accent-red-bg); color: var(--accent-red-text); border: 1px solid var(--accent-red-border); }
@@ -378,21 +456,39 @@ pre {
 .reasoning-box {
     background: var(--accent-blue-bg);
     border-left: 4px solid var(--brand-indigo);
-    padding: 1.1rem;
-    margin: 1.1rem 0;
+    padding: 1rem;
+    margin: 1rem 0;
     border-radius: 0 8px 8px 0;
-    font-size: 0.92rem;
+    font-size: 0.9rem;
     color: #1e3a8a;
     word-break: break-word;
+    overflow-wrap: anywhere;
 }
 
-.actions-header { display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 1rem; }
-.button-group { display: flex; gap: 0.85rem; flex-wrap: wrap; }
+.actions-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    flex-wrap: wrap;
+    gap: 1rem;
+    width: 100%;
+    max-width: 100%;
+}
+
+.button-group {
+    display: flex;
+    gap: 0.75rem;
+    flex-wrap: wrap;
+    max-width: 100%;
+}
+
 .hidden { display: none !important; }
 
 /* Responsive Media Queries */
-@media (max-width: 900px) {
+@media (max-width: 1024px) {
     .dashboard-grid {
         grid-template-columns: 1fr;
     }
 }
+
+

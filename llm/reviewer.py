@@ -41,6 +41,7 @@ def query_ollama(system_prompt: str, user_prompt: str, model: str = DEFAULT_MODE
             {"role": "system", "content": system_prompt},
             {"role": "user", "content": user_prompt},
         ],
+        "format": "json",
         "stream": False,
         "keep_alive": "30m",
         "options": {
