@@ -74,11 +74,13 @@ flowchart TD
     E -->|"decision: confirmed"| F["🚨 CONFIRMED RISK<br/>(Section 1 & Confirmed Tab)"]
     E -->|"decision: rejected"| G["🛡️ DISCARDED FALSE POSITIVE<br/>(Section 2 & Discarded Tab)"]
 
-    style A fill:#eff6ff,stroke:#1d4ed8,stroke-width:2px;
-    style B fill:#e0e7ff,stroke:#4f46e5,stroke-width:2px;
-    style D fill:#fef3c7,stroke:#d97706,stroke-width:2px;
-    style F fill:#fef2f2,stroke:#dc2626,stroke-width:2px;
-    style G fill:#ecfdf5,stroke:#059669,stroke-width:2px;
+    style A fill:#eff6ff,stroke:#1d4ed8,stroke-width:2px,color:#0f172a;
+    style B fill:#e0e7ff,stroke:#4f46e5,stroke-width:2px,color:#0f172a;
+    style C fill:#f1f5f9,stroke:#64748b,stroke-width:2px,color:#0f172a;
+    style D fill:#fef3c7,stroke:#d97706,stroke-width:2px,color:#0f172a;
+    style E fill:#f3e8ff,stroke:#7c3aed,stroke-width:2px,color:#0f172a;
+    style F fill:#fef2f2,stroke:#dc2626,stroke-width:2px,color:#991b1b;
+    style G fill:#ecfdf5,stroke:#059669,stroke-width:2px,color:#065f46;
 ```
 
 ---
@@ -112,6 +114,13 @@ graph LR
     end
 
     RAW --> NORM --> CTX --> ASSESSED --> REVIEWED --> OUTPUT
+
+    style RAW fill:#f1f5f9,stroke:#64748b,color:#0f172a;
+    style NORM fill:#eff6ff,stroke:#1d4ed8,color:#0f172a;
+    style CTX fill:#e0e7ff,stroke:#4f46e5,color:#0f172a;
+    style ASSESSED fill:#fef3c7,stroke:#d97706,color:#0f172a;
+    style REVIEWED fill:#ecfdf5,stroke:#059669,color:#0f172a;
+    style OUTPUT fill:#fef2f2,stroke:#dc2626,color:#991b1b;
 ```
 
 ---
