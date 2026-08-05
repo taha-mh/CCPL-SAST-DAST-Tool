@@ -47,6 +47,13 @@ REPORTS_DIR = BASE_DIR / "reports"
 FRONTEND_DIR = BASE_DIR / "frontend"
 
 
+# --- Pydantic Data Models ---
+class ScanRequest(BaseModel):
+    target_name: str = Field(default="DVWA", description="Subfolder name inside targets/ directory")
+    max_findings: Optional[int] = Field(default=3, description="Max findings to process through AI (set None for all)")
+    include_pattern: Optional[str] = Field(default="*.php", description="Glob file pattern filter (e.g. *.php)")
+
+
 # --- API Routes ---
 
 @app.get("/api/targets", summary="List available scan targets")
@@ -197,6 +204,55 @@ async def stream_sast_scan(
             yield f"data: {json.dumps(err_payload)}\n\n"
 
     return StreamingResponse(event_generator(), media_type="text/event-stream")
+
+
+@app.post("/api/scan", summary="Run full 6-step SAST Scan Pipeline (Validated via Pydantic)")
+def trigger_sast_scan(request: ScanRequest):
+    """
+    Orchestrates the entire Web SAST pipeline with Pydantic body validation:
+    1. Semgrep Scanner Wrapper
+    2. Semgrep Normalizer
+    3. Source Context Extractor
+    4. Pass 1 LLM Assessor
+    5. Pass 2 LLM Reviewer
+    6. Report Generator
+    """
+    target_path = TARGETS_DIR / request.target_name
+    if not target_path.exists() or not target_path.is_dir():
+        raise HTTPException(
+            status_code=404,
+            detail=f"Target directory '{request.target_name}' not found under targets/"
+        )
+
+    try:
+        scan_res = run_semgrep_scan(target_dir=str(target_path), output_file="data/raw/semgrep_findings.json", include_pattern=request.include_pattern)
+        norm_findings = normalize_semgrep_findings(raw_json_path="data/raw/semgrep_findings.json", output_normalized_path="data/normalized/normalized_findings.json")
+        context_findings = extract_source_context(normalized_json_path="data/normalized/normalized_findings.json", output_json_path="data/normalized/findings_with_context.json")
+        assessed_findings = run_llm_assessor(input_json_path="data/normalized/findings_with_context.json", output_json_path="data/normalized/assessed_findings.json", max_findings=request.max_findings)
+        reviewed_findings = run_llm_reviewer(input_json_path="data/normalized/assessed_findings.json", output_json_path="data/normalized/reviewed_findings.json", max_findings=request.max_findings)
+        report_res = run_report_generator(input_json_path="data/normalized/reviewed_findings.json", output_md_path="reports/sast_report.md", output_html_path="reports/sast_report.html")
+
+        confirmed_count = sum(
+            1 for f in reviewed_findings
+            if f.get("llm_review", {}).get("decision") == "confirmed"
+            or (not f.get("llm_review", {}).get("decision") and f.get("llm_assessment", {}).get("is_plausible") is True)
+        )
+        discarded_count = len(reviewed_findings) - confirmed_count
+
+        return {
+            "status": "success",
+            "target": request.target_name,
+            "total_evaluated": len(reviewed_findings),
+            "confirmed_vulnerabilities": confirmed_count,
+            "discarded_false_positives": discarded_count,
+            "reviewed_findings": reviewed_findings,
+            "reports": report_res,
+        }
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.exception(f"Pipeline execution failed: {e}")
+        raise HTTPException(status_code=500, detail=f"Pipeline error: {str(e)}")
 
 
 @app.get("/api/reports/html", summary="Download/View HTML Security Report")

@@ -144,6 +144,16 @@ def generate_html_report(reviewed_findings: list, output_html_path: str = "repor
     ]
     discarded = [f for f in reviewed_findings if f not in confirmed]
 
+    # Convert frontend/logo.webp to base64 for standalone HTML embedding
+    logo_b64 = ""
+    logo_path = Path(__file__).resolve().parent.parent / "frontend" / "logo.webp"
+    if logo_path.exists():
+        import base64
+        with open(logo_path, "rb") as img_f:
+            logo_b64 = base64.b64encode(img_f.read()).decode("utf-8")
+
+    logo_tag = f'<img src="data:image/webp;base64,{logo_b64}" alt="CCPL Logo" style="height: 38px; max-height: 38px; width: auto; max-width: 160px; object-fit: contain; vertical-align: middle; margin-right: 0.75rem; flex-shrink: 0;">' if logo_b64 else '🛡️ '
+
     html_content = f"""<!DOCTYPE html>
 <html lang="en">
 <head>
@@ -179,8 +189,9 @@ def generate_html_report(reviewed_findings: list, output_html_path: str = "repor
             color: var(--text-primary);
             padding: 2rem;
             line-height: 1.6;
+            overflow-x: hidden;
         }}
-        .container {{ max-width: 1100px; margin: 0 auto; }}
+        .container {{ max-width: 1100px; margin: 0 auto; width: 100%; }}
         .header {{
             background: #ffffff;
             padding: 2rem;
@@ -189,19 +200,25 @@ def generate_html_report(reviewed_findings: list, output_html_path: str = "repor
             border-top: 5px solid var(--brand-indigo);
             margin-bottom: 2rem;
             box-shadow: 0 4px 20px rgba(15, 23, 42, 0.04);
+            display: flex;
+            align-items: center;
+            gap: 1rem;
         }}
+        .header-text {{ flex: 1; }}
         h1 {{ margin: 0 0 0.5rem 0; color: var(--brand-indigo); font-size: 1.8rem; font-weight: 700; }}
         .meta-info {{ color: var(--text-muted); font-size: 0.9rem; margin-top: 0.5rem; }}
         .stats-grid {{
             display: grid;
-            grid-template-columns: repeat(3, 1fr);
+            grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
             gap: 1.25rem;
             margin-bottom: 2rem;
+            width: 100%;
         }}
         .stat-card {{
             border-radius: 12px;
             padding: 1.5rem;
             text-align: center;
+            min-width: 0;
         }}
         .stat-card.evaluated {{ background: var(--accent-blue-bg); border: 1px solid var(--accent-blue-border); }}
         .stat-card.confirmed {{ background: var(--accent-red-bg); border: 1px solid var(--accent-red-border); }}
@@ -224,7 +241,11 @@ def generate_html_report(reviewed_findings: list, output_html_path: str = "repor
             padding: 1.6rem;
             margin-bottom: 1.5rem;
             box-shadow: 0 4px 15px rgba(15, 23, 42, 0.03);
+            max-width: 100%;
+            overflow-wrap: anywhere;
+            word-break: break-word;
         }}
+        code, p, span, div {{ overflow-wrap: anywhere; word-break: break-word; }}
         .badge {{
             display: inline-block;
             padding: 0.3rem 0.85rem;
@@ -246,6 +267,9 @@ def generate_html_report(reviewed_findings: list, output_html_path: str = "repor
             font-size: 0.88rem;
             color: #f1f5f9;
             margin-top: 0.5rem;
+            white-space: pre-wrap;
+            word-break: break-all;
+            max-width: 100%;
         }}
         .reasoning-box {{
             background: var(--accent-blue-bg);
@@ -255,6 +279,7 @@ def generate_html_report(reviewed_findings: list, output_html_path: str = "repor
             border-radius: 0 8px 8px 0;
             font-size: 0.92rem;
             color: #1e3a8a;
+            word-break: break-word;
         }}
         @media print {{
             body {{ background-color: #ffffff; padding: 0; }}
@@ -266,10 +291,13 @@ def generate_html_report(reviewed_findings: list, output_html_path: str = "repor
 <body>
     <div class="container">
         <div class="header">
-            <h1>🛡️ CCPL Web SAST Security Assessment Report</h1>
-            <div class="meta-info">
-                <p><strong>Target Codebase:</strong> DVWA (<code>targets/DVWA</code>) | <strong>Engine:</strong> Semgrep + Ollama (<code>qwen3:8b</code>)</p>
-                <p><strong>Report Timestamp:</strong> {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}</p>
+            {logo_tag}
+            <div class="header-text">
+                <h1>CCPL Web SAST Security Assessment Report</h1>
+                <div class="meta-info">
+                    <p><strong>Target Codebase:</strong> DVWA (<code>targets/DVWA</code>) | <strong>Engine:</strong> Semgrep + Ollama (<code>qwen3:8b</code>)</p>
+                    <p><strong>Report Timestamp:</strong> {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}</p>
+                </div>
             </div>
         </div>
 
