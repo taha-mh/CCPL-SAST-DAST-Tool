@@ -9,7 +9,6 @@ import subprocess
 import time
 from datetime import datetime
 from pathlib import Path
-from typing import Dict, List
 
 try:
     from zapv2 import ZAPv2
@@ -48,7 +47,7 @@ def run_dast_scan(
     target_base_url: str = "http://127.0.0.1:8085",
     output_file: str = "data/raw/dast_findings.json",
     zap_proxy_url: str = "http://127.0.0.1:8080",
-) -> Dict:
+) -> dict:
     """Executes DAST scan via OWASP ZAP API daemon."""
     target_base_url = target_base_url.rstrip("/")
     output_path = Path(output_file).resolve()
@@ -88,7 +87,7 @@ def run_dast_scan(
 
         # Step 3: Fetch Alerts & Format Findings
         zap_alerts = zap.core.alerts(baseurl=target_base_url)
-        raw_findings: List[Dict] = [
+        raw_findings: list[dict] = [
             {
                 "finding_id": f"ZAP-RAW-{idx:03d}",
                 "vulnerability_type": alert.get("name", "Security Vulnerability"),
