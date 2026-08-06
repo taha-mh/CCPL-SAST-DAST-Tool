@@ -49,7 +49,7 @@ def generate_markdown_report(reviewed_findings: list, output_md_path: str = "rep
     md_lines.append("")
     md_lines.append(f"**Generated On:** {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}")
     md_lines.append(f"**Target System:** DVWA Source Code (`targets/DVWA`)")
-    md_lines.append(f"**Scanner Engine:** Semgrep + Ollama (`qwen3:8b`)")
+    md_lines.append(f"**Scanner Engine:** Semgrep + Ollama (`qwen3.5:9b`)")
     md_lines.append("")
     md_lines.append("---")
     md_lines.append("")

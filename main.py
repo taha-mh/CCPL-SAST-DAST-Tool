@@ -135,7 +135,7 @@ async def stream_sast_scan(
 
             # Step 4: Pass 1 AI Assessor
             target_count = len(context_findings[:parsed_max]) if parsed_max else len(context_findings)
-            yield log("assessor", f"[Step 4/6] 🤖 Pass 1 AI Assessor (qwen3:8b) evaluating plausible risks on {target_count} findings...", active_step="assessor")
+            yield log("assessor", f"[Step 4/6] 🤖 Pass 1 AI Assessor (qwen3.5:9b) evaluating plausible risks on {target_count} findings...", active_step="assessor")
             
             assessor_task = asyncio.create_task(asyncio.to_thread(
                 run_llm_assessor,

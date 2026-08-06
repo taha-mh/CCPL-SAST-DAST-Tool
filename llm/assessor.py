@@ -23,7 +23,7 @@ logging.basicConfig(level=logging.INFO, format="[%(asctime)s] %(levelname)s: %(m
 logger = logging.getLogger(__name__)
 
 OLLAMA_API_URL = "http://localhost:11434/api/chat"
-DEFAULT_MODEL = "qwen3:8b"
+DEFAULT_MODEL = os.getenv("OLLAMA_MODEL", "qwen3.5:9b")
 
 
 def query_ollama(system_prompt: str, user_prompt: str, model: str = DEFAULT_MODEL) -> dict:
