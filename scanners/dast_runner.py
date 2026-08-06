@@ -9,6 +9,7 @@ import subprocess
 import time
 from datetime import datetime
 from pathlib import Path
+import requests
 
 try:
     from zapv2 import ZAPv2
@@ -19,7 +20,28 @@ except ImportError:
 logging.basicConfig(level=logging.INFO, format="[%(asctime)s] %(levelname)s: %(message)s")
 logger = logging.getLogger(__name__)
 
-ZAP_BAT_PATH = r"C:\Program Files\ZAP\Zed Attack Proxy\zap.bat"
+JAVA_EXE_PATH = r"C:\Program Files\Eclipse Adoptium\jre-17.0.20.8-hotspot\bin\java.exe"
+ZAP_JAR_PATH = r"C:\Program Files\ZAP\Zed Attack Proxy\zap-2.17.0.jar"
+
+
+def get_authenticated_session_cookie(target_base_url: str) -> str:
+    """Perform automated login to fetch valid session cookie header from target application."""
+    login_url = f"{target_base_url.rstrip('/')}/login.php"
+    login_data = {"username": "admin", "password": "password", "Login": "Login"}
+
+    try:
+        resp = requests.post(login_url, data=login_data, timeout=5)
+        cookies = resp.cookies.get_dict()
+        if cookies:
+            cookie_str = "; ".join([f"{k}={v}" for k, v in cookies.items()])
+            if "security" not in cookie_str.lower():
+                cookie_str += "; security=low"
+            logger.info(f"Successfully authenticated! Harvested Session Cookie: '{cookie_str}'")
+            return cookie_str
+    except Exception as e:
+        logger.warning(f"Automated login attempt to {login_url} failed: {e}")
+
+    return "security=low"
 
 
 def ensure_zap_daemon_started(zap_proxy_url: str = "http://127.0.0.1:8080"):
@@ -34,11 +56,19 @@ def ensure_zap_daemon_started(zap_proxy_url: str = "http://127.0.0.1:8080"):
     except Exception:
         logger.info("OWASP ZAP Daemon is offline. Auto-starting ZAP in background...")
 
-    if os.path.exists(ZAP_BAT_PATH):
+    if os.path.exists(JAVA_EXE_PATH) and os.path.exists(ZAP_JAR_PATH):
         try:
-            cmd = [ZAP_BAT_PATH, "-daemon", "-port", "8080", "-config", "api.disablekey=true"]
+            cmd = [JAVA_EXE_PATH, "-Xmx512m", "-jar", ZAP_JAR_PATH, "-daemon", "-port", "8080", "-config", "api.disablekey=true"]
             subprocess.Popen(cmd, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
-            time.sleep(10)
+            for attempt in range(1, 15):
+                time.sleep(2)
+                try:
+                    zap = ZAPv2(proxies={'http': zap_proxy_url, 'https': zap_proxy_url})
+                    _ = zap.core.version
+                    logger.info("OWASP ZAP Daemon initialized successfully!")
+                    return
+                except Exception:
+                    logger.info(f"Waiting for ZAP daemon startup... ({attempt * 2}s)")
         except Exception as e:
             logger.warning(f"Failed to auto-start OWASP ZAP Daemon: {e}")
 
@@ -48,7 +78,7 @@ def run_dast_scan(
     output_file: str = "data/raw/dast_findings.json",
     zap_proxy_url: str = "http://127.0.0.1:8080",
 ) -> dict:
-    """Executes DAST scan via OWASP ZAP API daemon."""
+    """Executes DAST scan via OWASP ZAP API daemon with automated login authentication."""
     target_base_url = target_base_url.rstrip("/")
     output_path = Path(output_file).resolve()
     output_path.parent.mkdir(parents=True, exist_ok=True)
@@ -71,14 +101,29 @@ def run_dast_scan(
         return {"status": "error", "error": error_msg, "findings_count": 0}
 
     try:
-        # Step 1: Spider Crawl
+        # Step 0: Perform Automated Login & Inject Session Cookie into ZAP Replacer
+        session_cookie = get_authenticated_session_cookie(target_base_url)
+        try:
+            zap.replacer.add_rule(
+                description="Automated_Auth_Cookie",
+                enabled="true",
+                matchtype="REQ_HEADER",
+                matchregex="false",
+                matchstring="Cookie",
+                replacement=session_cookie,
+            )
+            logger.info(f"Injected Session Cookie: '{session_cookie}' into ZAP API Replacer rules.")
+        except Exception as e:
+            logger.warning(f"Could not inject session cookie: {e}")
+
+        # Step 1: Spider Crawl Target
         logger.info(f"Triggering ZAP Spider crawl for {target_base_url}...")
         spider_id = zap.spider.scan(target_base_url)
         time.sleep(2)
         while int(zap.spider.status(spider_id)) < 100:
             time.sleep(2)
 
-        # Step 2: Active Scan
+        # Step 2: Active Scan Target
         logger.info(f"Triggering ZAP Active Scan for {target_base_url}...")
         scan_id = zap.ascan.scan(target_base_url)
         time.sleep(2)
