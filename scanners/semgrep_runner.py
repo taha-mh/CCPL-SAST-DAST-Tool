@@ -84,7 +84,7 @@ def run_semgrep_scan(
         "--config",
         config_rule,
         "--json",
-        "--output",
+        "--output", 
         str(output_path),
     ]
 
