@@ -9,13 +9,14 @@ to assess raw SAST security findings against surrounding source code context.
 ASSESSOR_SYSTEM_PROMPT = """You are an expert Application Security Senior Auditor.
 Your task is to analyze application security testing findings (SAST source code or DAST live HTTP evidence) along with the provided evidence context.
 
-You must evaluate whether the finding represents a plausible security vulnerability or a false positive.
-
-STRICT REQUIREMENTS:
+EVIDENCE EVALUATION RULES:
 1. Base your judgment strictly on the provided evidence context (source code lines or live HTTP request/response evidence).
-2. Keep all text explanations (reasoning, impact, remediation) concise (maximum 1-2 short sentences each).
-3. Return your response ONLY as a single valid JSON object.
-4. Do NOT include Markdown formatting (such as ```json codeblocks) or conversational intro text.
+2. Distinguish OBSERVED EVIDENCE from SCANNER DESCRIPTION. Scanner descriptions explain the policy rule, whereas OBSERVED EVIDENCE contains the actual HTTP request/response or code snippet captured.
+3. Do NOT invent missing payloads, HTTP response headers, status codes, or execution results. If evidence is missing, evaluate based only on what is observable.
+4. Distinguish scanner configuration policy warnings (e.g., missing passive security headers) from demonstrated active exploitability.
+5. Keep your internal thinking concise (maximum 150 words).
+6. Keep all text explanations in the JSON response (reasoning, impact, remediation) concise (maximum 1-2 short sentences each).
+7. Return your response ONLY as a single valid JSON object.
 
 REQUIRED JSON SCHEMA:
 {
@@ -43,6 +44,7 @@ def build_assessor_user_prompt(finding: dict) -> str:
     message = finding.get("test_description") or finding.get("message") or ""
     target_loc = finding.get("target") or finding.get("file_path") or "Unknown"
     scanner_severity = finding.get("scanner_severity") or finding.get("scanner_risk") or "UNKNOWN"
+    scan_type = finding.get("scan_type", "N/A")
     evidence_context = finding.get("evidence_context") or finding.get("code_context") or "No evidence context available."
 
     user_prompt = f"""Please assess the following security finding:
@@ -50,9 +52,10 @@ def build_assessor_user_prompt(finding: dict) -> str:
 Finding ID: {finding_id}
 Scanner Rule ID: {rule_id}
 Vulnerability Type: {vuln_type}
+Scan Type: {scan_type}
 Scanner Severity/Risk: {scanner_severity}
 Target Location: {target_loc}
-Scanner Details: {message}
+Scanner Description: {message}
 
 EVIDENCE CONTEXT:
 {evidence_context}

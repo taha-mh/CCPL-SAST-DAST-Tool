@@ -48,7 +48,7 @@ def query_ollama(system_prompt: str, user_prompt: str, model: str = DEFAULT_MODE
         "keep_alive": "30m",
         "options": {
             "temperature": 0.2,   # Low temperature for deterministic reasoning
-            "num_predict": 1024,  # Allow up to 1024 tokens so Qwen3 reasoning completes
+            "num_predict": 2048,  # Allow up to 2048 tokens so Qwen3.5 thinking + JSON completes
             "num_thread": 8,      # Utilize all 8 vCPUs of the VM
         },
     }
@@ -61,16 +61,16 @@ def query_ollama(system_prompt: str, user_prompt: str, model: str = DEFAULT_MODE
         raw_text = response.content.decode("utf-8", errors="replace")
         response_data = json.loads(raw_text)
         message_content = response_data.get("message", {}).get("content", "").strip()
+        if not message_content:
+            message_content = response_data.get("message", {}).get("thinking", "").strip()
 
-        # Strip markdown backticks if Qwen3 wrapped its response in ```json ... ```
-        cleaned_content = message_content
-        if cleaned_content.startswith("```json"):
-            cleaned_content = cleaned_content[7:]
-        elif cleaned_content.startswith("```"):
-            cleaned_content = cleaned_content[3:]
-        if cleaned_content.endswith("```"):
-            cleaned_content = cleaned_content[:-3]
-        cleaned_content = cleaned_content.strip()
+        # Robustly extract JSON object substring {...} from Qwen3.5 thinking models
+        start_idx = message_content.find("{")
+        end_idx = message_content.rfind("}")
+        if start_idx != -1 and end_idx != -1 and end_idx > start_idx:
+            cleaned_content = message_content[start_idx : end_idx + 1].strip()
+        else:
+            cleaned_content = message_content.strip()
 
         try:
             review = json.loads(cleaned_content)
@@ -123,6 +123,19 @@ def run_llm_reviewer(
     for index, finding in enumerate(target_findings, start=1):
         finding_id = finding.get("finding_id", f"FINDING-{index}")
         logger.info(f"[{index}/{len(target_findings)}] Reviewing {finding_id} ({finding.get('rule_id')})...")
+
+        # Safely handle Pass 1 Assessor failures without wasting tokens or making false assumptions
+        assessment = finding.get("llm_assessment", {})
+        if assessment.get("llm_status") == "error":
+            err_type = assessment.get("error_type", "system_failure")
+            logger.warning(f"Skipping Pass 2 LLM call for {finding_id} due to Pass 1 error ({err_type}).")
+            finding["llm_review"] = {
+                "decision": "needs_review",
+                "review_reason": f"Pass 1 LLM evaluation failed due to {err_type}. Flagged for manual security review.",
+                "final_severity": finding.get("scanner_severity", "LOW"),
+                "confidence": "LOW",
+            }
+            continue
 
         user_prompt = build_reviewer_user_prompt(finding)
         review_verdict = query_ollama(REVIEWER_SYSTEM_PROMPT, user_prompt)

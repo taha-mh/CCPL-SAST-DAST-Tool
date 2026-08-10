@@ -48,7 +48,7 @@ def query_ollama(system_prompt: str, user_prompt: str, model: str = DEFAULT_MODE
         "keep_alive": "30m",  # Keep model loaded in RAM for 30 minutes so it doesn't reload
         "options": {
             "temperature": 0.2,   # Low temperature for deterministic reasoning
-            "num_predict": 1024,  # Allow up to 1024 tokens so Qwen3 reasoning completes
+            "num_predict": 2048,  # Allow up to 2048 tokens so Qwen3.5 thinking + JSON completes
             "num_thread": 8,      # Utilize all 8 vCPUs of the VM
         },
     }
@@ -62,36 +62,45 @@ def query_ollama(system_prompt: str, user_prompt: str, model: str = DEFAULT_MODE
         raw_text = response.content.decode("utf-8", errors="replace")
         response_data = json.loads(raw_text)
         message_content = response_data.get("message", {}).get("content", "").strip()
+        if not message_content:
+            message_content = response_data.get("message", {}).get("thinking", "").strip()
 
-        # Strip markdown backticks if Qwen3 wrapped its response in ```json ... ```
-        cleaned_content = message_content
-        if cleaned_content.startswith("```json"):
-            cleaned_content = cleaned_content[7:]
-        elif cleaned_content.startswith("```"):
-            cleaned_content = cleaned_content[3:]
-        if cleaned_content.endswith("```"):
-            cleaned_content = cleaned_content[:-3]
-        cleaned_content = cleaned_content.strip()
+        # Robustly extract JSON object substring {...} from Qwen3.5 thinking models
+        start_idx = message_content.find("{")
+        end_idx = message_content.rfind("}")
+        if start_idx != -1 and end_idx != -1 and end_idx > start_idx:
+            cleaned_content = message_content[start_idx : end_idx + 1].strip()
+        else:
+            cleaned_content = message_content.strip()
 
-        # Parse the inner JSON string returned by Qwen3
+        # Parse the inner JSON string returned by Qwen
         try:
             assessment = json.loads(cleaned_content)
+            if isinstance(assessment, dict):
+                assessment["llm_status"] = "success"
             return assessment
         except json.JSONDecodeError:
             logger.warning(f"Could not parse LLM JSON response string: {message_content[:100]}")
             return {
-                "is_plausible": False,
-                "vulnerability_type": "JSON_PARSE_ERROR",
-                "severity": "LOW",
-                "reasoning": f"LLM returned invalid JSON string: {message_content[:200]}",
+                "llm_status": "error",
+                "error_type": "json_parse_error",
+                "error_message": f"LLM returned non-JSON string: {message_content[:200]}",
                 "raw_response": message_content,
             }
 
+    except requests.exceptions.Timeout:
+        logger.error("Ollama API request timed out.")
+        return {
+            "llm_status": "error",
+            "error_type": "timeout",
+            "error_message": "LLM API request timed out (300s).",
+        }
     except Exception as e:
         logger.error(f"Failed to communicate with Ollama API at {OLLAMA_API_URL}: {e}")
         return {
-            "is_plausible": False,
-            "error": f"Ollama connection error: {str(e)}",
+            "llm_status": "error",
+            "error_type": "connection_error",
+            "error_message": f"Ollama connection error: {str(e)}",
         }
 
 
