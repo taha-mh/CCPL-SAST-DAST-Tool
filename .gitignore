@@ -83,3 +83,6 @@ $RECYCLE.BIN/
 
 # Semgrep local cache
 .semgrep/
+
+# Personal learning notes and private reference files
+trash/
