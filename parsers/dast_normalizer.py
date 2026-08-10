@@ -73,7 +73,7 @@ def normalize_dast_findings(
             "scanner_risk": item.get("risk", "Low"),
             "scanner_confidence": item.get("confidence", "Medium"),
             "target": affected_url,
-            "code_context": context_str,
+            "evidence_context": context_str,
             "test_description": item.get("test_description", ""),
         }
         normalized_list.append(normalized_finding)

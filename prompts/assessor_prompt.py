@@ -7,12 +7,12 @@ to assess raw SAST security findings against surrounding source code context.
 """
 
 ASSESSOR_SYSTEM_PROMPT = """You are an expert Application Security Senior Auditor.
-Your task is to analyze static application security testing (SAST) findings along with the provided source code context.
+Your task is to analyze application security testing findings (SAST source code or DAST live HTTP evidence) along with the provided evidence context.
 
 You must evaluate whether the finding represents a plausible security vulnerability or a false positive.
 
 STRICT REQUIREMENTS:
-1. Base your judgment strictly on the provided source code lines and rule metadata.
+1. Base your judgment strictly on the provided evidence context (source code lines or live HTTP request/response evidence).
 2. Keep all text explanations (reasoning, impact, remediation) concise (maximum 1-2 short sentences each).
 3. Return your response ONLY as a single valid JSON object.
 4. Do NOT include Markdown formatting (such as ```json codeblocks) or conversational intro text.
@@ -24,9 +24,9 @@ REQUIRED JSON SCHEMA:
   "vulnerability_type": "string",
   "severity": "CRITICAL" | "HIGH" | "MEDIUM" | "LOW" | "INFO",
   "reasoning": "Detailed explanation of why this finding is or is not a real security vulnerability.",
-  "evidence": "Specific lines or code patterns from the context that support your decision.",
+  "evidence": "Specific evidence snippets or request/response patterns that support your decision.",
   "impact": "Explanation of potential security risk if exploited.",
-  "remediation": "Concrete recommendation on how developers should fix or refactor the code.",
+  "remediation": "Concrete recommendation on how developers should fix or remediate the vulnerability.",
   "confidence": "HIGH" | "MEDIUM" | "LOW"
 }
 """
@@ -35,35 +35,28 @@ REQUIRED JSON SCHEMA:
 def build_assessor_user_prompt(finding: dict) -> str:
     """
     Formats a single finding dictionary into a structured user prompt for the LLM.
-
-    :param finding: Dictionary containing normalized finding keys and code_context.
-    :return: Formatted prompt string for the user role message.
+    Supports both SAST (source code context) and DAST (live HTTP evidence).
     """
     finding_id = finding.get("finding_id", "UNKNOWN")
     rule_id = finding.get("rule_id", "UNKNOWN")
-    title = finding.get("title", "Security Issue")
-    message = finding.get("message", "")
-    file_path = finding.get("file_path", "")
-    start_line = finding.get("start_line", 0)
-    end_line = finding.get("end_line", 0)
-    scanner_severity = finding.get("scanner_severity", "UNKNOWN")
-    code_context = finding.get("code_context", "No code context available.")
+    vuln_type = finding.get("vulnerability_type") or finding.get("title") or "Security Issue"
+    message = finding.get("test_description") or finding.get("message") or ""
+    target_loc = finding.get("target") or finding.get("file_path") or "Unknown"
+    scanner_severity = finding.get("scanner_severity") or finding.get("scanner_risk") or "UNKNOWN"
+    evidence_context = finding.get("evidence_context") or finding.get("code_context") or "No evidence context available."
 
-    user_prompt = f"""Please assess the following SAST security finding:
+    user_prompt = f"""Please assess the following security finding:
 
 Finding ID: {finding_id}
 Scanner Rule ID: {rule_id}
-Title: {title}
-Scanner Severity: {scanner_severity}
-Target File: {file_path}
-Vulnerable Lines: {start_line}-{end_line}
-Scanner Message: {message}
+Vulnerability Type: {vuln_type}
+Scanner Severity/Risk: {scanner_severity}
+Target Location: {target_loc}
+Scanner Details: {message}
 
-Source Code Context (Vulnerable line marked with ->):
-```
-{code_context}
-```
+EVIDENCE CONTEXT:
+{evidence_context}
 
-Assess this finding according to the required JSON schema.
+Analyze the finding and evidence context above and respond ONLY with the JSON object following the required schema.
 """
     return user_prompt
