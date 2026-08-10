@@ -69,6 +69,10 @@ logs/
 *.tar.gz
 *.tgz
 
+# Local project notes
+PROJECT_NOTES.md
+docs/PROJECT_NOTES.md
+
 # IDE and editor files
 .vscode/
 .idea/
