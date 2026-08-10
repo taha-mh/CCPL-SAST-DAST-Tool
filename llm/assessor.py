@@ -48,8 +48,7 @@ def query_ollama(system_prompt: str, user_prompt: str, model: str = DEFAULT_MODE
         "keep_alive": "30m",  # Keep model loaded in RAM for 30 minutes so it doesn't reload
         "options": {
             "temperature": 0.2,   # Low temperature for deterministic reasoning
-            "num_predict": 2048,  # Allow up to 2048 tokens so Qwen3.5 thinking + JSON completes
-            "num_thread": 8,      # Utilize all 8 vCPUs of the VM
+            "num_predict": 1024,  # Allow up to 1024 tokens so Qwen3 reasoning completes
         },
     }
 
