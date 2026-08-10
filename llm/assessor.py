@@ -48,7 +48,7 @@ def query_ollama(system_prompt: str, user_prompt: str, model: str = DEFAULT_MODE
         "keep_alive": "30m",  # Keep model loaded in RAM for 30 minutes so it doesn't reload
         "options": {
             "temperature": 0.0,   # Deterministic 0.0 temperature for instant JSON output
-            "num_predict": 384,   # Bounded token limit for fast CPU inference
+            "num_predict": 768,   # 768 token limit to allow complete JSON object output
             "num_thread": 8,      # Utilize all 8 vCPUs of the VM
         },
     }

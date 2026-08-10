@@ -61,6 +61,6 @@ INITIAL ASSESSOR EVALUATION:
 - Assessor Reasoning: {assessor_reasoning}
 - Proposed Remediation: {assessor_remediation}
 
-Perform your 2nd pass review and respond ONLY with the JSON object following the required schema.
+CRITICAL INSTRUCTION: Your output MUST begin with the '{{' character on the very first line. Do NOT write any introductory text. Respond ONLY with the JSON object following the required schema.
 """
     return user_prompt

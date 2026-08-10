@@ -59,6 +59,6 @@ Scanner Description: {message}
 EVIDENCE CONTEXT:
 {evidence_context}
 
-Analyze the finding and evidence context above and respond ONLY with the JSON object following the required schema.
+CRITICAL INSTRUCTION: Your output MUST begin with the '{{' character on the very first line. Do NOT write any introductory text (such as "The user wants me to..."). Respond ONLY with the JSON object following the required schema.
 """
     return user_prompt
