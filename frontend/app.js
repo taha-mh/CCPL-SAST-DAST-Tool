@@ -20,6 +20,22 @@ document.addEventListener('DOMContentLoaded', () => {
         scanBtn.addEventListener('click', handleScanSubmit);
     }
 
+    const pipelineSelect = document.getElementById('pipeline-select');
+    if (pipelineSelect) {
+        pipelineSelect.addEventListener('change', (e) => {
+            const isDast = e.target.value === 'web_dast';
+            const targetGroup = document.getElementById('target-select-group');
+            const patternGroup = document.getElementById('include-pattern-group');
+            if (isDast) {
+                if (targetGroup) targetGroup.classList.add('hidden');
+                if (patternGroup) patternGroup.classList.add('hidden');
+            } else {
+                if (targetGroup) targetGroup.classList.remove('hidden');
+                if (patternGroup) patternGroup.classList.remove('hidden');
+            }
+        });
+    }
+
     // Attach Tab Switch Handlers
     document.getElementById('tab-confirmed-btn').addEventListener('click', () => setTab('confirmed'));
     document.getElementById('tab-discarded-btn').addEventListener('click', () => setTab('discarded'));
@@ -58,6 +74,7 @@ async function fetchTargets() {
  * Handles "Start SAST Scan" button click, connects to SSE stream GET /api/scan/stream.
  */
 function handleScanSubmit() {
+    const pipeline = document.getElementById('pipeline-select').value || 'web_sast';
     const targetName = document.getElementById('target-select').value || 'DVWA';
     const scanMode = document.getElementById('scan-mode').value;
     const includePattern = document.getElementById('include-pattern').value || '*.php';
@@ -84,7 +101,7 @@ function handleScanSubmit() {
     scanBtn.innerHTML = '<span>⏳</span><span>Scanning Target...</span>';
 
     // Build SSE URL
-    const streamUrl = `/api/scan/stream?target_name=${encodeURIComponent(targetName)}&max_findings=${encodeURIComponent(scanMode)}&include_pattern=${encodeURIComponent(includePattern)}`;
+    const streamUrl = `/api/scan/stream?target_name=${encodeURIComponent(targetName)}&max_findings=${encodeURIComponent(scanMode)}&include_pattern=${encodeURIComponent(includePattern)}&pipeline=${encodeURIComponent(pipeline)}`;
     const eventSource = new EventSource(streamUrl);
 
     eventSource.onmessage = (event) => {
@@ -97,7 +114,7 @@ function handleScanSubmit() {
             eventSource.close();
             spinnerGroup.classList.add('hidden');
             scanBtn.disabled = false;
-            scanBtn.innerHTML = '<span>⚡</span><span>Start SAST Scan</span>';
+            scanBtn.innerHTML = '<span>⚡</span><span>Start Scan Pipeline</span>';
             updatePipelineStep('done');
             
             currentScanData = data;
@@ -106,7 +123,7 @@ function handleScanSubmit() {
             eventSource.close();
             spinnerGroup.classList.add('hidden');
             scanBtn.disabled = false;
-            scanBtn.innerHTML = '<span>⚡</span><span>Start SAST Scan</span>';
+            scanBtn.innerHTML = '<span>⚡</span><span>Start Scan Pipeline</span>';
             appendConsoleLog(new Date().toLocaleTimeString(), `❌ ${data.message}`, 'error');
         }
     };
@@ -265,6 +282,15 @@ function renderActiveTabFindings() {
         const reason = review.review_reason || assessment.reasoning || 'No explanation provided.';
         const remediation = assessment.remediation || 'No remediation snippet available.';
 
+        // Dual SAST/DAST location handling
+        const isDast = !!f.target;
+        const locationHtml = isDast 
+            ? `<strong>Target URL:</strong> <code>${f.target}</code> | <strong>Rule:</strong> <code>${f.rule_id}</code>`
+            : `<strong>File:</strong> <code>${f.file_path}</code> (Lines ${f.start_line}-${f.end_line}) | <strong>Rule:</strong> <code>${f.rule_id}</code>`;
+            
+        const contextLabel = isDast ? '📄 Live HTTP Evidence Context:' : '📄 Source Code Context:';
+        const contextData = f.evidence_context || f.code_context || 'No context snippet available.';
+
         const card = document.createElement('div');
         card.className = 'finding-card';
         if (!isConfirmed) {
@@ -275,11 +301,11 @@ function renderActiveTabFindings() {
             <div class="finding-header">
                 <div>
                     <span class="badge ${badgeClass}">${badgeLabel}</span>
-                    <strong style="margin-left: 0.5rem; font-size: 1.1rem;">${f.finding_id}: ${f.title}</strong>
+                    <strong style="margin-left: 0.5rem; font-size: 1.1rem;">${f.finding_id}: ${f.title || f.vulnerability_type}</strong>
                 </div>
             </div>
             <p style="color: var(--text-muted); font-size: 0.88rem; margin-top: 0.4rem;">
-                <strong>File:</strong> <code>${f.file_path}</code> (Lines ${f.start_line}-${f.end_line}) | <strong>Rule:</strong> <code>${f.rule_id}</code>
+                ${locationHtml}
             </p>
 
             <div class="reasoning-box" style="${!isConfirmed ? 'background: var(--accent-green-bg); border-left-color: var(--accent-green-text); color: var(--accent-green-text);' : ''}">
@@ -292,8 +318,8 @@ function renderActiveTabFindings() {
                 <pre><code>${remediation}</code></pre>
             ` : ''}
 
-            <strong style="display: block; margin-top: 0.75rem;">📄 Source Code Context:</strong>
-            <pre><code>${f.code_context || 'No code context snippet available.'}</code></pre>
+            <strong style="display: block; margin-top: 0.75rem;">${contextLabel}</strong>
+            <pre><code>${contextData}</code></pre>
         `;
 
         container.appendChild(card);

@@ -48,13 +48,13 @@ def query_ollama(system_prompt: str, user_prompt: str, model: str = DEFAULT_MODE
         "keep_alive": "30m",  # Keep model loaded in RAM for 30 minutes so it doesn't reload
         "options": {
             "temperature": 0.2,   # Low temperature for deterministic reasoning
-            "num_predict": 1024,  # Allow up to 1024 tokens so Qwen3 reasoning completes
+            "num_predict": 2048,  # Allow up to 2048 tokens so Qwen3 reasoning completes
         },
     }
 
     try:
-        # Use requests.post to send JSON payload with a 300-second timeout
-        response = requests.post(OLLAMA_API_URL, json=payload, timeout=300)
+        # Use requests.post to send JSON payload with a 600-second timeout
+        response = requests.post(OLLAMA_API_URL, json=payload, timeout=600)
         response.raise_for_status()  # Raises HTTPError if status code is 4xx/5xx
 
         # Safely decode UTF-8 response bytes to avoid Windows cp1252 charmap errors

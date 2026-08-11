@@ -75,8 +75,6 @@ def generate_markdown_report(reviewed_findings: list, output_md_path: str = "rep
         for f in confirmed:
             f_id = f.get("finding_id", "UNKNOWN")
             title = f.get("title", "Security Issue")
-            file_path = f.get("file_path", "")
-            lines_str = f"{f.get('start_line')}-{f.get('end_line')}"
             review = f.get("llm_review", {})
             assessment = f.get("llm_assessment", {})
 
@@ -85,9 +83,17 @@ def generate_markdown_report(reviewed_findings: list, output_md_path: str = "rep
             reasoning = review.get("review_reason") or assessment.get("reasoning", "No explanation available.")
             remediation = assessment.get("remediation", "No remediation snippet available.")
 
+            # Dual SAST/DAST location handling
+            target_url = f.get("target")
+            if target_url:
+                location_str = f"Target URL: `{target_url}`"
+            else:
+                lines_str = f"{f.get('start_line')}-{f.get('end_line')}"
+                location_str = f"`{f.get('file_path', '')}` (Lines {lines_str})"
+
             md_lines.append(f"### [{sev}] {f_id}: {title}")
             md_lines.append(f"- **Rule ID:** `{rule_id}`")
-            md_lines.append(f"- **Affected Location:** `{file_path}` (Lines {lines_str})")
+            md_lines.append(f"- **Affected Location:** {location_str}")
             md_lines.append(f"- **AI Review Verdict:** `{review.get('decision', 'confirmed').upper()}` (Confidence: `{review.get('confidence', 'HIGH')}`)")
             md_lines.append("")
             md_lines.append(f"**Analysis & Evidence:**")
@@ -96,7 +102,8 @@ def generate_markdown_report(reviewed_findings: list, output_md_path: str = "rep
             md_lines.append(f"**Recommended Developer Remediation:**")
             md_lines.append(f"```text\n{remediation}\n```")
             md_lines.append("")
-            md_lines.append("#### Evidence Context")
+            context_label = "#### Live HTTP Evidence Context" if target_url else "#### Code Context"
+            md_lines.append(context_label)
             md_lines.append("```text")
             md_lines.append(f.get("evidence_context") or f.get("code_context", "No context snippet available."))
             md_lines.append("```")
@@ -114,9 +121,10 @@ def generate_markdown_report(reviewed_findings: list, output_md_path: str = "rep
         for f in discarded:
             f_id = f.get("finding_id", "UNKNOWN")
             rule_id = f.get("rule_id", "UNKNOWN")
-            file_path = Path(f.get("file_path", "")).name
+            # Handle DAST URL target vs SAST file path
+            file_loc = Path(f.get("file_path", "")).name if f.get("file_path") else f.get("target", "N/A")
             reason = f.get("llm_review", {}).get("review_reason") or f.get("llm_assessment", {}).get("reasoning") or "Discarded by 2nd pass review"
-            md_lines.append(f"| `{f_id}` | `{rule_id}` | `{file_path}` | {reason} |")
+            md_lines.append(f"| `{f_id}` | `{rule_id}` | `{file_loc}` | {reason} |")
 
     report_content = "\n".join(md_lines)
 
@@ -334,8 +342,16 @@ def generate_html_report(reviewed_findings: list, output_html_path: str = "repor
     for f in reviewed_findings:
         f_id = f.get("finding_id", "UNKNOWN")
         title = f.get("title", "Security Issue")
-        file_path = Path(f.get("file_path", "")).name
-        lines_str = f"L{f.get('start_line')}-{f.get('end_line')}"
+        
+        # Dual SAST/DAST location handling for matrix table
+        target_url = f.get("target")
+        if target_url:
+            location_html = f"<code>{target_url}</code>"
+        else:
+            file_path = Path(f.get("file_path", "")).name
+            lines_str = f"L{f.get('start_line')}-{f.get('end_line')}"
+            location_html = f"<code>{file_path}:{lines_str}</code>"
+            
         review = f.get("llm_review", {})
         assessment = f.get("llm_assessment", {})
         decision = review.get("decision") or ("confirmed" if assessment.get("is_plausible") else "rejected")
@@ -349,7 +365,7 @@ def generate_html_report(reviewed_findings: list, output_html_path: str = "repor
                     <tr style="border-bottom: 1px solid var(--card-border);">
                         <td style="padding: 0.75rem;"><strong>{f_id}</strong></td>
                         <td style="padding: 0.75rem;">{title}<br><code style="font-size: 0.75rem; color: var(--text-muted);">{f.get('rule_id')}</code></td>
-                        <td style="padding: 0.75rem;"><code>{file_path}:{lines_str}</code></td>
+                        <td style="padding: 0.75rem;">{location_html}</td>
                         <td style="padding: 0.75rem;">{sev_badge}</td>
                         <td style="padding: 0.75rem;">{verdict_badge}</td>
                     </tr>
@@ -369,8 +385,19 @@ def generate_html_report(reviewed_findings: list, output_html_path: str = "repor
         for f in confirmed:
             f_id = f.get("finding_id", "UNKNOWN")
             title = f.get("title", "Security Issue")
-            file_path = f.get("file_path", "")
-            lines_str = f"{f.get('start_line')}-{f.get('end_line')}"
+            
+            # Dual SAST/DAST location handling
+            target_url = f.get("target")
+            if target_url:
+                location_tag = f"<strong>Target URL:</strong> <code>{target_url}</code>"
+                context_label = "📄 Live HTTP Evidence Context:"
+                context_data = f.get("evidence_context", "")
+            else:
+                lines_str = f"{f.get('start_line')}-{f.get('end_line')}"
+                location_tag = f"<strong>Location:</strong> <code>{f.get('file_path', '')}</code> (Lines {lines_str})"
+                context_label = "📄 Source Code Context:"
+                context_data = f.get("code_context", "")
+                
             review = f.get("llm_review", {})
             assessment = f.get("llm_assessment", {})
             sev = (review.get("final_severity") or assessment.get("severity") or f.get("scanner_severity", "HIGH")).upper()
@@ -385,7 +412,7 @@ def generate_html_report(reviewed_findings: list, output_html_path: str = "repor
                 <strong style="margin-left: 0.5rem; font-size: 1.1rem;">{f_id}: {title}</strong>
             </div>
             <p style="color: var(--text-muted); font-size: 0.88rem; margin-top: 0.5rem;">
-                <strong>Location:</strong> <code>{file_path}</code> (Lines {lines_str}) | <strong>Rule:</strong> <code>{f.get('rule_id')}</code>
+                {location_tag} | <strong>Rule:</strong> <code>{f.get('rule_id')}</code>
             </p>
 
             <div class="reasoning-box">
@@ -396,8 +423,8 @@ def generate_html_report(reviewed_findings: list, output_html_path: str = "repor
             <strong>🛠️ Remediation Recommendation:</strong>
             <pre><code>{remediation}</code></pre>
 
-            <strong style="display: block; margin-top: 0.75rem;">📄 Source Code Context:</strong>
-            <pre><code>{f.get('code_context', '')}</code></pre>
+            <strong style="display: block; margin-top: 0.75rem;">{context_label}</strong>
+            <pre><code>{context_data}</code></pre>
         </div>
 """
 
@@ -411,8 +438,19 @@ def generate_html_report(reviewed_findings: list, output_html_path: str = "repor
         for f in discarded:
             f_id = f.get("finding_id", "UNKNOWN")
             title = f.get("title", "Security Issue")
-            file_path = f.get("file_path", "")
-            lines_str = f"{f.get('start_line')}-{f.get('end_line')}"
+            
+            # Dual SAST/DAST location handling
+            target_url = f.get("target")
+            if target_url:
+                location_tag = f"<strong>Target URL:</strong> <code>{target_url}</code>"
+                context_label = "📄 Live HTTP Evidence Context:"
+                context_data = f.get("evidence_context", "")
+            else:
+                lines_str = f"{f.get('start_line')}-{f.get('end_line')}"
+                location_tag = f"<strong>Location:</strong> <code>{f.get('file_path', '')}</code> (Lines {lines_str})"
+                context_label = "📄 Source Code Context:"
+                context_data = f.get("code_context", "")
+                
             review = f.get("llm_review", {})
             assessment = f.get("llm_assessment", {})
             reasoning = review.get("review_reason") or assessment.get("reasoning", "Evaluated as non-exploitable context.")
@@ -424,7 +462,7 @@ def generate_html_report(reviewed_findings: list, output_html_path: str = "repor
                 <strong style="margin-left: 0.5rem; font-size: 1.1rem;">{f_id}: {title}</strong>
             </div>
             <p style="color: var(--text-muted); font-size: 0.88rem; margin-top: 0.5rem;">
-                <strong>Location:</strong> <code>{file_path}</code> (Lines {lines_str}) | <strong>Rule:</strong> <code>{f.get('rule_id')}</code>
+                {location_tag} | <strong>Rule:</strong> <code>{f.get('rule_id')}</code>
             </p>
 
             <div class="reasoning-box" style="background: var(--accent-green-bg); border-left-color: var(--accent-green-text); color: var(--accent-green-text);">
@@ -432,8 +470,8 @@ def generate_html_report(reviewed_findings: list, output_html_path: str = "repor
                 <p style="margin-top: 0.4rem;">{reasoning}</p>
             </div>
 
-            <strong style="display: block; margin-top: 0.75rem;">📄 Source Code Context:</strong>
-            <pre><code>{f.get('code_context', '')}</code></pre>
+            <strong style="display: block; margin-top: 0.75rem;">{context_label}</strong>
+            <pre><code>{context_data}</code></pre>
         </div>
 """
 

@@ -39,6 +39,14 @@
                 
                 <form id="scan-form" onsubmit="return false;">
                     <div class="form-group">
+                        <label for="pipeline-select">Select Security Pipeline:</label>
+                        <select id="pipeline-select" class="form-input">
+                            <option value="web_sast">🛡️ Web SAST (Static Code Analysis)</option>
+                            <option value="web_dast">🌐 Web DAST (Dynamic HTTP Testing)</option>
+                        </select>
+                    </div>
+
+                    <div class="form-group" id="target-select-group">
                         <label for="target-select">Select Target Project:</label>
                         <select id="target-select" class="form-input">
                             <option value="">Loading targets...</option>
@@ -53,14 +61,14 @@
                         </select>
                     </div>
 
-                    <div class="form-group">
+                    <div class="form-group" id="include-pattern-group">
                         <label for="include-pattern">Target File Extension Filter:</label>
                         <input type="text" id="include-pattern" class="form-input" value="*.php" placeholder="e.g. *.php or *.js">
                     </div>
 
                     <button id="scan-btn" class="btn btn-primary">
                         <span id="btn-icon">⚡</span>
-                        <span id="btn-text">Start SAST Scan</span>
+                        <span id="btn-text">Start Scan Pipeline</span>
                     </button>
                 </form>
             </section>
