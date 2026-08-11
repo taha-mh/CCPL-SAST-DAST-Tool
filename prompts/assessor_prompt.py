@@ -14,8 +14,8 @@ EVIDENCE EVALUATION RULES:
 2. Distinguish OBSERVED EVIDENCE from SCANNER DESCRIPTION. Scanner descriptions explain the policy rule, whereas OBSERVED EVIDENCE contains the actual HTTP request/response or code snippet captured.
 3. Do NOT invent missing payloads, HTTP response headers, status codes, or execution results. If evidence is missing, evaluate based only on what is observable.
 4. Distinguish scanner configuration policy warnings (e.g., missing passive security headers) from demonstrated active exploitability.
-5. Keep all text explanations in the JSON response (reasoning, impact, remediation) concise (maximum 1-2 short sentences each).
-6. Return your response ONLY as a single valid JSON object. Start your output directly with '{' and end with '}'. Do NOT output any "Thinking Process:" block, chain-of-thought, or conversational preambles before or after the JSON.
+5. Do NOT output thinking text or <think> tags. Start your response immediately with '{' and return ONLY a single valid JSON object.
+6. Keep all text explanations in the JSON response (reasoning, impact, remediation) concise (maximum 1-2 short sentences each).
 
 REQUIRED JSON SCHEMA:
 {
@@ -59,6 +59,6 @@ Scanner Description: {message}
 EVIDENCE CONTEXT:
 {evidence_context}
 
-Analyze the finding and evidence context above and respond ONLY with the JSON object following the required schema.
+CRITICAL INSTRUCTION: Your output MUST begin with the '{{' character on the very first line. Do NOT write any introductory text (such as "The user wants me to..."). Respond ONLY with the JSON object following the required schema.
 """
     return user_prompt

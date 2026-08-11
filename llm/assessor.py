@@ -47,28 +47,27 @@ def query_ollama(system_prompt: str, user_prompt: str, model: str = DEFAULT_MODE
         "stream": False,
         "keep_alive": "30m",  # Keep model loaded in RAM for 30 minutes so it doesn't reload
         "options": {
-            "temperature": 0.2,   # Low temperature for deterministic reasoning
-            "num_predict": 2048,  # Allow up to 2048 tokens so Qwen3 reasoning completes
+            "temperature": 0.0,   # Deterministic 0.0 temperature for clear output
+            "num_predict": 1536,  # 1536 token limit for complete thinking + JSON output
+            "num_thread": 8,      # Utilize all 8 vCPUs of the VM
         },
     }
 
     try:
-        # Use requests.post to send JSON payload with a 600-second timeout
-        response = requests.post(OLLAMA_API_URL, json=payload, timeout=600)
+        # Use requests.post to send JSON payload with a 300-second timeout
+        response = requests.post(OLLAMA_API_URL, json=payload, timeout=300)
         response.raise_for_status()  # Raises HTTPError if status code is 4xx/5xx
 
         # Safely decode UTF-8 response bytes to avoid Windows cp1252 charmap errors
         raw_text = response.content.decode("utf-8", errors="replace")
         response_data = json.loads(raw_text)
         message_content = response_data.get("message", {}).get("content", "").strip()
-        if not message_content:
-            message_content = response_data.get("message", {}).get("thinking", "").strip()
 
-        # Robustly extract JSON object substring {...} from Qwen3.5 thinking models
-        start_idx = message_content.find("{")
-        end_idx = message_content.rfind("}")
-        if start_idx != -1 and end_idx != -1 and end_idx > start_idx:
-            cleaned_content = message_content[start_idx : end_idx + 1].strip()
+        # Robustly extract JSON object substring {...} using Regex
+        import re
+        match = re.search(r'\{[\s\S]*\}', message_content)
+        if match:
+            cleaned_content = match.group(0).strip()
         else:
             cleaned_content = message_content.strip()
 
@@ -128,7 +127,7 @@ def run_llm_assessor(
         findings = json.load(f)
 
     target_findings = findings[:max_findings] if max_findings else findings
-    logger.info(f"Running LLM Assessor (Qwen3 8B) on {len(target_findings)} findings...")
+    logger.info(f"Running LLM Assessor ({DEFAULT_MODEL}) on {len(target_findings)} findings...")
 
     for index, finding in enumerate(target_findings, start=1):
         finding_id = finding.get("finding_id", f"FINDING-{index}")
