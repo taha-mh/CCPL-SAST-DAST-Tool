@@ -127,7 +127,7 @@ def run_llm_assessor(
         findings = json.load(f)
 
     target_findings = findings[:max_findings] if max_findings else findings
-    logger.info(f"Running LLM Assessor (Qwen3 8B) on {len(target_findings)} findings...")
+    logger.info(f"Running LLM Assessor ({DEFAULT_MODEL}) on {len(target_findings)} findings...")
 
     for index, finding in enumerate(target_findings, start=1):
         finding_id = finding.get("finding_id", f"FINDING-{index}")

@@ -116,7 +116,7 @@ def run_llm_reviewer(
         findings = json.load(f)
 
     target_findings = findings[:max_findings] if max_findings else findings
-    logger.info(f"Running LLM Reviewer (Qwen3 8B 2nd Pass) on {len(target_findings)} findings...")
+    logger.info(f"Running LLM Reviewer ({DEFAULT_MODEL} 2nd Pass) on {len(target_findings)} findings...")
 
     for index, finding in enumerate(target_findings, start=1):
         finding_id = finding.get("finding_id", f"FINDING-{index}")
