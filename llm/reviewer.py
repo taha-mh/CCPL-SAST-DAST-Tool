@@ -10,99 +10,27 @@ Responsibility:
 
 import json
 import logging
-import os
 import sys
 from pathlib import Path
-import requests
 
-
-# Import prompt templates
+# Import prompt templates and central LLM provider
 sys.path.append(str(Path(__file__).resolve().parents[1]))
 from prompts.reviewer_prompt import REVIEWER_SYSTEM_PROMPT, build_reviewer_user_prompt
+from llm.provider import query_llm
 
 # Configure logging
 logging.basicConfig(level=logging.INFO, format="[%(asctime)s] %(levelname)s: %(message)s")
 logger = logging.getLogger(__name__)
 
-OLLAMA_API_URL = "http://localhost:11434/api/chat"
-DEFAULT_MODEL = os.getenv("OLLAMA_MODEL", "qwen3.5:9b")
-
-
-def query_ollama(system_prompt: str, user_prompt: str, model: str = DEFAULT_MODEL) -> dict:
-    """
-    Sends a chat request to the local Ollama API using the requests library.
-
-    :param system_prompt: Instructions defining the reviewer role and schema.
-    :param user_prompt: Assessed finding details and initial AI diagnosis.
-    :param model: Ollama model name (default: qwen3:8b).
-    :return: Parsed JSON review verdict dictionary from the LLM.
-    """
-    payload = {
-        "model": model,
-        "messages": [
-            {"role": "system", "content": system_prompt},
-            {"role": "user", "content": user_prompt},
-        ],
-        "format": "json",
-        "stream": False,
-        "keep_alive": "30m",
-        "options": {
-            "temperature": 0.0,   # Deterministic 0.0 temperature for clear output
-            "num_predict": 1536,  # 1536 token limit for complete thinking + JSON output
-            "num_thread": 8,      # Utilize all 8 vCPUs of the VM
-        },
-    }
-
-    try:
-        response = requests.post(OLLAMA_API_URL, json=payload, timeout=300)
-        response.raise_for_status()
-
-        # Safely decode UTF-8 response bytes to avoid Windows cp1252 charmap errors
-        raw_text = response.content.decode("utf-8", errors="replace")
-        response_data = json.loads(raw_text)
-        message_content = response_data.get("message", {}).get("content", "").strip()
-
-        # Robustly extract JSON object substring {...} using Regex
-        import re
-        match = re.search(r'\{[\s\S]*\}', message_content)
-        if match:
-            cleaned_content = match.group(0).strip()
-        else:
-            cleaned_content = message_content.strip()
-
-        try:
-            review = json.loads(cleaned_content)
-            return review
-        except json.JSONDecodeError as err:
-            logger.warning(f"Could not parse LLM JSON response string ({err}): {message_content[:200]}")
-            return {
-                "decision": "needs_review",
-                "review_reason": f"LLM returned non-JSON string ({err}): {message_content[:200]}",
-                "final_severity": "LOW",
-                "confidence": "LOW",
-                "raw_response": message_content,
-            }
-
-    except Exception as e:
-        logger.error(f"Failed to communicate with Ollama API at {OLLAMA_API_URL}: {e}")
-        return {
-            "decision": "needs_review",
-            "error": f"Ollama connection error: {str(e)}",
-        }
-
 
 def run_llm_reviewer(
     input_json_path: str = "data/normalized/assessed_findings.json",
     output_json_path: str = "data/normalized/reviewed_findings.json",
-    max_findings: int = 3,  # Set to 3 for test runs; pass None to process all findings
-) -> list:
+    max_findings: int | None = 3,
+) -> list[dict]:
     """
-    Processes assessed findings through local Qwen3 8B LLM for a 2nd pass review.
-
-    :param input_json_path: Path to assessed findings JSON.
-    :param output_json_path: Path to save final reviewed findings JSON.
-    :param max_findings: Max number of findings to review.
-    :return: List of reviewed finding dictionaries.
+    Reads assessed findings, performs 2nd pass Senior Audit Reviewer evaluation
+    via central query_llm provider, and attaches the review verdict dictionary.
     """
     input_file = Path(input_json_path).resolve()
     output_file = Path(output_json_path).resolve()
@@ -116,7 +44,7 @@ def run_llm_reviewer(
         findings = json.load(f)
 
     target_findings = findings[:max_findings] if max_findings else findings
-    logger.info(f"Running LLM Reviewer ({DEFAULT_MODEL} 2nd Pass) on {len(target_findings)} findings...")
+    logger.info(f"Running LLM Reviewer on {len(target_findings)} findings...")
 
     for index, finding in enumerate(target_findings, start=1):
         finding_id = finding.get("finding_id", f"FINDING-{index}")
@@ -136,7 +64,7 @@ def run_llm_reviewer(
             continue
 
         user_prompt = build_reviewer_user_prompt(finding)
-        review_verdict = query_ollama(REVIEWER_SYSTEM_PROMPT, user_prompt)
+        review_verdict = query_llm(REVIEWER_SYSTEM_PROMPT, user_prompt)
 
         # Attach 2nd pass LLM review verdict to finding dictionary
         finding["llm_review"] = review_verdict
