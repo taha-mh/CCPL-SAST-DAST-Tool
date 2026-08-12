@@ -1,9 +1,9 @@
 """
-LLM Reviewer Prompt Template for CCPL Web SAST Tool.
+OpenAI Reviewer prompt template for the CCPL Web Security Tool.
 
 Responsibility:
-Provide structured system instructions and user prompt formatters for Qwen3 8B
-to perform a second logical review pass on the initial LLM assessment.
+Provide instructions and evidence for an independent second review of the local
+Qwen assessor's initial assessment.
 """
 
 REVIEWER_SYSTEM_PROMPT = """You are the Chief Application Security Officer reviewing an initial security assessment.
@@ -11,7 +11,7 @@ Your job is to perform a strict 2nd pass review to confirm, reject, or flag secu
 
 STRICT REVIEW RULES:
 1. Examine both the evidence context (source code lines or live HTTP request/response evidence) and the initial Assessor's reasoning.
-2. Do NOT output thinking text or <think> tags. Start your response immediately with '{' and return ONLY a single valid JSON object.
+2. Base the verdict only on the supplied evidence and assessor output; do not invent missing facts.
 3. If the evidence shows proper sanitization, safe configuration, or non-exploitable headers, REJECT the finding as a false positive.
 4. If the finding represents a genuine security risk, CONFIRM the finding.
 5. Keep the review_reason concise (maximum 1-2 short sentences).
@@ -61,6 +61,6 @@ INITIAL ASSESSOR EVALUATION:
 - Assessor Reasoning: {assessor_reasoning}
 - Proposed Remediation: {assessor_remediation}
 
-CRITICAL INSTRUCTION: Your output MUST begin with the '{{' character on the very first line. Do NOT write any introductory text. Respond ONLY with the JSON object following the required schema.
+Return the verdict using the required structured response schema.
 """
     return user_prompt

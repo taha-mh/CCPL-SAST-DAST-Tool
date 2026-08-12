@@ -164,7 +164,7 @@ async def stream_sast_scan(
                 await asyncio.sleep(0.3)
 
                 # Step 5: AI Reviewer
-                yield log("reviewer", f"[Step 5/6] 🛡️ Pass 2 AI Senior Reviewer auditing DAST verdicts...", active_step="reviewer")
+                yield log("reviewer", f"[Step 5/6] 🛡️ OpenAI GPT-5.4 Nano Reviewer auditing DAST verdicts...", active_step="reviewer")
                 
                 reviewer_task = asyncio.create_task(asyncio.to_thread(
                     run_llm_reviewer,
@@ -262,7 +262,7 @@ async def stream_sast_scan(
                 await asyncio.sleep(0.3)
 
                 # Step 5: Pass 2 AI Reviewer
-                yield log("reviewer", f"[Step 5/6] 🛡️ Pass 2 AI Senior Reviewer auditing verdicts for false-positive elimination...", active_step="reviewer")
+                yield log("reviewer", f"[Step 5/6] 🛡️ OpenAI GPT-5.4 Nano Reviewer auditing verdicts...", active_step="reviewer")
                 
                 reviewer_task = asyncio.create_task(asyncio.to_thread(
                     run_llm_reviewer,

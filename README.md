@@ -1,6 +1,6 @@
 # 🛡️ CCPL Web SAST Security Scanner (Phase 1)
 
-An automated, AI-assisted **Static Application Security Testing (SAST)** tool designed to scan web application codebases, normalize scanner outputs, extract surrounding source code context, and eliminate false positives using a **2-Pass AI Reasoning Engine** (Ollama `qwen3:8b`).
+An automated, AI-assisted **Static Application Security Testing (SAST)** tool designed to scan web application codebases, normalize scanner outputs, extract surrounding source code context, and reduce false positives using a **2-Pass AI Reasoning Engine**: local Ollama `qwen3.5:9b` assessment followed by an independent OpenAI `gpt-5.4-nano` review.
 
 ---
 
@@ -13,8 +13,8 @@ An automated, AI-assisted **Static Application Security Testing (SAST)** tool de
 1. **Step 1: Scanner Wrapper (`scanners/semgrep_runner.py`)**: Runs Semgrep rules restricted to target web files (`*.php`).
 2. **Step 2: Findings Normalizer (`parsers/semgrep_normalizer.py`)**: Converts raw Semgrep output into a standardized JSON schema.
 3. **Step 3: Source Context Extractor (`parsers/source_context.py`)**: Extracts ±10 lines of surrounding code context around flagged vulnerabilities.
-4. **Step 4: Pass 1 AI Assessor (`llm/assessor.py`)**: Prompts local Ollama (`qwen3:8b`) for an initial plausibility verdict (`is_plausible: true/false`).
-5. **Step 5: Pass 2 AI Senior Reviewer (`llm/reviewer.py`)**: Independent audit agent that verifies Pass 1 reasoning and filters out false positives (`decision: "confirmed" | "rejected"`).
+4. **Step 4: Pass 1 AI Assessor (`llm/assessor.py`)**: Prompts local Ollama (`qwen3.5:9b`) for an initial plausibility verdict (`is_plausible: true/false`).
+5. **Step 5: Pass 2 AI Senior Reviewer (`llm/reviewer.py`)**: Sends the finding evidence and Pass 1 assessment to OpenAI `gpt-5.4-nano` for an independent structured verdict (`confirmed`, `rejected`, or `needs_review`).
 6. **Step 6: Security Report Generator (`reports/report_generator.py`)**: Generates executive HTML and Markdown reports featuring a Summary Matrix Table and a Discarded False-Positives Audit Log.
 
 ---
@@ -31,7 +31,8 @@ An automated, AI-assisted **Static Application Security Testing (SAST)** tool de
 ### 1. Prerequisites
 * Python 3.10+
 * Semgrep CLI (`pip install semgrep`)
-* Ollama running locally with `qwen3:8b` pulled (`ollama run qwen3:8b`)
+* Ollama running locally with `qwen3.5:9b` pulled
+* An OpenAI API key provided through the `OPENAI_API_KEY` environment variable
 
 ### 2. Installation
 ```powershell

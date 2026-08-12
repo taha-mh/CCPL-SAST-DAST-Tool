@@ -1,166 +1,253 @@
-"""
-LLM Reviewer Module for CCPL Web SAST Tool.
+"""Independent Pass 2 security review through the OpenAI Responses API."""
 
-Responsibility:
-1. Load assessed findings from data/normalized/assessed_findings.json.
-2. Perform a 2nd logical review pass using local Ollama (qwen3:8b) API.
-3. Classify findings into 'confirmed', 'rejected', or 'needs_review'.
-4. Save reviewed findings to data/normalized/reviewed_findings.json.
-"""
+from __future__ import annotations
 
 import json
 import logging
 import os
 import sys
 from pathlib import Path
-import requests
+from typing import Any
 
+import httpx
 
-# Import prompt templates
 sys.path.append(str(Path(__file__).resolve().parents[1]))
 from prompts.reviewer_prompt import REVIEWER_SYSTEM_PROMPT, build_reviewer_user_prompt
 
-# Configure logging
-logging.basicConfig(level=logging.INFO, format="[%(asctime)s] %(levelname)s: %(message)s")
 logger = logging.getLogger(__name__)
 
-OLLAMA_API_URL = "http://localhost:11434/api/chat"
-DEFAULT_MODEL = os.getenv("OLLAMA_MODEL", "qwen3.5:9b")
+OPENAI_RESPONSES_URL = "https://api.openai.com/v1/responses"
+DEFAULT_MODEL = "gpt-5.4-nano"
+DEFAULT_REASONING_EFFORT = "low"
+DEFAULT_TIMEOUT_SECONDS = 120.0
+DEFAULT_MAX_OUTPUT_TOKENS = 700
 
-
-def query_ollama(system_prompt: str, user_prompt: str, model: str = DEFAULT_MODEL) -> dict:
-    """
-    Sends a chat request to the local Ollama API using the requests library.
-
-    :param system_prompt: Instructions defining the reviewer role and schema.
-    :param user_prompt: Assessed finding details and initial AI diagnosis.
-    :param model: Ollama model name (default: qwen3:8b).
-    :return: Parsed JSON review verdict dictionary from the LLM.
-    """
-    payload = {
-        "model": model,
-        "messages": [
-            {"role": "system", "content": system_prompt},
-            {"role": "user", "content": user_prompt},
-        ],
-        "format": "json",
-        "stream": False,
-        "keep_alive": "30m",
-        "options": {
-            "temperature": 0.0,   # Deterministic 0.0 temperature for clear output
-            "num_predict": 1536,  # 1536 token limit for complete thinking + JSON output
-            "num_thread": 8,      # Utilize all 8 vCPUs of the VM
+REVIEW_SCHEMA: dict[str, Any] = {
+    "type": "object",
+    "properties": {
+        "finding_id": {"type": "string"},
+        "decision": {
+            "type": "string",
+            "enum": ["confirmed", "rejected", "needs_review"],
         },
+        "review_reason": {"type": "string"},
+        "final_severity": {
+            "type": "string",
+            "enum": ["CRITICAL", "HIGH", "MEDIUM", "LOW", "INFO"],
+        },
+        "confidence": {
+            "type": "string",
+            "enum": ["HIGH", "MEDIUM", "LOW"],
+        },
+    },
+    "required": [
+        "finding_id",
+        "decision",
+        "review_reason",
+        "final_severity",
+        "confidence",
+    ],
+    "additionalProperties": False,
+}
+
+
+def _configuration_error(error_type: str, reason: str) -> dict[str, Any]:
+    """Return a safe auditable verdict when independent review cannot run."""
+    return {
+        "decision": "needs_review",
+        "review_reason": reason,
+        "final_severity": "LOW",
+        "confidence": "LOW",
+        "review_status": "error",
+        "error_type": error_type,
     }
 
+
+def _extract_output_text(response_data: dict[str, Any]) -> str:
+    """Extract the assistant text from a raw Responses API response."""
+    if isinstance(response_data.get("output_text"), str):
+        return response_data["output_text"].strip()
+
+    for item in response_data.get("output", []):
+        if item.get("type") != "message":
+            continue
+        for content in item.get("content", []):
+            if content.get("type") == "output_text" and isinstance(content.get("text"), str):
+                return content["text"].strip()
+    return ""
+
+
+def _validate_review(review: Any) -> dict[str, Any]:
+    """Defensively validate the fields guaranteed by Structured Outputs."""
+    if not isinstance(review, dict):
+        raise ValueError("Reviewer response is not a JSON object")
+
+    required = set(REVIEW_SCHEMA["required"])
+    missing = sorted(required.difference(review))
+    if missing:
+        raise ValueError(f"Reviewer response is missing fields: {', '.join(missing)}")
+
+    if review["decision"] not in {"confirmed", "rejected", "needs_review"}:
+        raise ValueError("Reviewer returned an invalid decision")
+    if review["final_severity"] not in {"CRITICAL", "HIGH", "MEDIUM", "LOW", "INFO"}:
+        raise ValueError("Reviewer returned an invalid severity")
+    if review["confidence"] not in {"HIGH", "MEDIUM", "LOW"}:
+        raise ValueError("Reviewer returned an invalid confidence")
+    return review
+
+
+def query_openai(
+    system_prompt: str,
+    user_prompt: str,
+    *,
+    model: str | None = None,
+    api_key: str | None = None,
+    client: httpx.Client | None = None,
+) -> dict[str, Any]:
+    """Request one strict reviewer verdict from the OpenAI Responses API."""
+    selected_model = model or os.getenv("OPENAI_REVIEWER_MODEL", DEFAULT_MODEL)
+    key = api_key or os.getenv("OPENAI_API_KEY")
+    if not key:
+        return _configuration_error(
+            "missing_api_key",
+            "OpenAI Reviewer is not configured; manual security review is required.",
+        )
+
+    reasoning_effort = os.getenv(
+        "OPENAI_REVIEWER_REASONING_EFFORT", DEFAULT_REASONING_EFFORT
+    )
+    if reasoning_effort not in {"none", "low", "medium", "high", "xhigh"}:
+        return _configuration_error(
+            "invalid_configuration",
+            "OpenAI reviewer reasoning effort is invalid; manual security review is required.",
+        )
+
+    payload = {
+        "model": selected_model,
+        "instructions": system_prompt,
+        "input": user_prompt,
+        "reasoning": {"effort": reasoning_effort},
+        "max_output_tokens": int(
+            os.getenv("OPENAI_REVIEWER_MAX_OUTPUT_TOKENS", DEFAULT_MAX_OUTPUT_TOKENS)
+        ),
+        "store": False,
+        "text": {
+            "verbosity": "low",
+            "format": {
+                "type": "json_schema",
+                "name": "security_review",
+                "strict": True,
+                "schema": REVIEW_SCHEMA,
+            },
+        },
+    }
+    headers = {
+        "Authorization": f"Bearer {key}",
+        "Content-Type": "application/json",
+    }
+
+    owns_client = client is None
+    http_client = client or httpx.Client(timeout=DEFAULT_TIMEOUT_SECONDS)
     try:
-        response = requests.post(OLLAMA_API_URL, json=payload, timeout=300)
+        response = http_client.post(OPENAI_RESPONSES_URL, headers=headers, json=payload)
         response.raise_for_status()
+        response_data = response.json()
+        output_text = _extract_output_text(response_data)
+        if not output_text:
+            raise ValueError("OpenAI response did not contain reviewer output text")
 
-        # Safely decode UTF-8 response bytes to avoid Windows cp1252 charmap errors
-        raw_text = response.content.decode("utf-8", errors="replace")
-        response_data = json.loads(raw_text)
-        message_content = response_data.get("message", {}).get("content", "").strip()
-
-        # Robustly extract JSON object substring {...} using Regex
-        import re
-        match = re.search(r'\{[\s\S]*\}', message_content)
-        if match:
-            cleaned_content = match.group(0).strip()
-        else:
-            cleaned_content = message_content.strip()
-
-        try:
-            review = json.loads(cleaned_content)
-            return review
-        except json.JSONDecodeError as err:
-            logger.warning(f"Could not parse LLM JSON response string ({err}): {message_content[:200]}")
-            return {
-                "decision": "needs_review",
-                "review_reason": f"LLM returned non-JSON string ({err}): {message_content[:200]}",
-                "final_severity": "LOW",
-                "confidence": "LOW",
-                "raw_response": message_content,
-            }
-
-    except Exception as e:
-        logger.error(f"Failed to communicate with Ollama API at {OLLAMA_API_URL}: {e}")
-        return {
-            "decision": "needs_review",
-            "error": f"Ollama connection error: {str(e)}",
+        review = _validate_review(json.loads(output_text))
+        review["review_status"] = "success"
+        review["review_model"] = selected_model
+        usage = response_data.get("usage", {})
+        review["usage"] = {
+            "input_tokens": usage.get("input_tokens", 0),
+            "output_tokens": usage.get("output_tokens", 0),
+            "total_tokens": usage.get("total_tokens", 0),
         }
+        return review
+    except httpx.TimeoutException:
+        logger.error("OpenAI Reviewer request timed out.")
+        return _configuration_error(
+            "timeout", "OpenAI Reviewer timed out; manual security review is required."
+        )
+    except httpx.HTTPStatusError as exc:
+        status = exc.response.status_code
+        error_type = {
+            401: "authentication_error",
+            403: "permission_error",
+            429: "rate_limit_error",
+        }.get(status, "api_error")
+        logger.error("OpenAI Reviewer API returned HTTP %s.", status)
+        return _configuration_error(
+            error_type,
+            f"OpenAI Reviewer returned HTTP {status}; manual security review is required.",
+        )
+    except (json.JSONDecodeError, ValueError, TypeError) as exc:
+        logger.error("OpenAI Reviewer returned an invalid structured response: %s", exc)
+        return _configuration_error(
+            "invalid_response",
+            "OpenAI Reviewer returned an invalid structured response; manual security review is required.",
+        )
+    except httpx.HTTPError as exc:
+        logger.error("OpenAI Reviewer connection failed: %s", type(exc).__name__)
+        return _configuration_error(
+            "connection_error",
+            "OpenAI Reviewer connection failed; manual security review is required.",
+        )
+    finally:
+        if owns_client:
+            http_client.close()
 
 
 def run_llm_reviewer(
     input_json_path: str = "data/normalized/assessed_findings.json",
     output_json_path: str = "data/normalized/reviewed_findings.json",
-    max_findings: int = 3,  # Set to 3 for test runs; pass None to process all findings
-) -> list:
-    """
-    Processes assessed findings through local Qwen3 8B LLM for a 2nd pass review.
-
-    :param input_json_path: Path to assessed findings JSON.
-    :param output_json_path: Path to save final reviewed findings JSON.
-    :param max_findings: Max number of findings to review.
-    :return: List of reviewed finding dictionaries.
-    """
+    max_findings: int | None = 3,
+) -> list[dict[str, Any]]:
+    """Review assessed findings one at a time using OpenAI."""
     input_file = Path(input_json_path).resolve()
     output_file = Path(output_json_path).resolve()
 
     if not input_file.exists():
-        logger.error(f"Input assessed findings file not found at: {input_file}")
+        logger.error("Input assessed findings file not found at: %s", input_file)
         return []
 
-    logger.info(f"Loading assessed findings from: {input_file}")
-    with open(input_file, "r", encoding="utf-8", errors="replace") as f:
-        findings = json.load(f)
+    findings = json.loads(input_file.read_text(encoding="utf-8", errors="replace"))
+    if not isinstance(findings, list):
+        raise ValueError("Assessed findings JSON must contain a list")
 
     target_findings = findings[:max_findings] if max_findings else findings
-    logger.info(f"Running LLM Reviewer ({DEFAULT_MODEL} 2nd Pass) on {len(target_findings)} findings...")
+    model = os.getenv("OPENAI_REVIEWER_MODEL", DEFAULT_MODEL)
+    logger.info("Running independent OpenAI Reviewer (%s) on %d findings...", model, len(target_findings))
 
     for index, finding in enumerate(target_findings, start=1):
         finding_id = finding.get("finding_id", f"FINDING-{index}")
-        logger.info(f"[{index}/{len(target_findings)}] Reviewing {finding_id} ({finding.get('rule_id')})...")
-
-        # Safely handle Pass 1 Assessor failures without wasting tokens or making false assumptions
         assessment = finding.get("llm_assessment", {})
         if assessment.get("llm_status") == "error":
-            err_type = assessment.get("error_type", "system_failure")
-            logger.warning(f"Skipping Pass 2 LLM call for {finding_id} due to Pass 1 error ({err_type}).")
-            finding["llm_review"] = {
-                "decision": "needs_review",
-                "review_reason": f"Pass 1 LLM evaluation failed due to {err_type}. Flagged for manual security review.",
-                "final_severity": finding.get("scanner_severity", "LOW"),
-                "confidence": "LOW",
-            }
+            error_type = assessment.get("error_type", "system_failure")
+            finding["llm_review"] = _configuration_error(
+                "assessor_failure",
+                f"Pass 1 failed due to {error_type}; manual security review is required.",
+            )
             continue
 
-        user_prompt = build_reviewer_user_prompt(finding)
-        review_verdict = query_ollama(REVIEWER_SYSTEM_PROMPT, user_prompt)
+        logger.info("[%d/%d] Reviewing %s...", index, len(target_findings), finding_id)
+        finding["llm_review"] = query_openai(
+            REVIEWER_SYSTEM_PROMPT,
+            build_reviewer_user_prompt(finding),
+            model=model,
+        )
 
-        # Attach 2nd pass LLM review verdict to finding dictionary
-        finding["llm_review"] = review_verdict
-
-    # Ensure output directory exists
     output_file.parent.mkdir(parents=True, exist_ok=True)
-
-    with open(output_file, "w", encoding="utf-8") as f:
-        json.dump(target_findings, f, indent=2, ensure_ascii=False)
-
-    logger.info(f"Successfully reviewed {len(target_findings)} findings!")
-    logger.info(f"Saved reviewed findings to: {output_file}")
-
+    output_file.write_text(
+        json.dumps(target_findings, indent=2, ensure_ascii=False) + "\n",
+        encoding="utf-8",
+    )
     return target_findings
 
 
 if __name__ == "__main__":
-    print("--- Running Milestone 6: LLM Reviewer (Qwen3 8B 2nd Pass) Test ---")
-    results = run_llm_reviewer(max_findings=3)
-    print(f"\nTotal Reviewed Findings: {len(results)}")
-    if results:
-        print("\nSample Reviewed Finding (First Item):")
-        sample = results[0]
-        print(f"ID: {sample.get('finding_id')}")
-        print(f"Rule: {sample.get('rule_id')}")
-        print("\n--- LLM Review Verdict ---")
-        print(json.dumps(sample.get("llm_review"), indent=2))
+    logging.basicConfig(level=logging.INFO, format="[%(asctime)s] %(levelname)s: %(message)s")
+    reviewed = run_llm_reviewer(max_findings=3)
+    print(f"Reviewed {len(reviewed)} findings with the OpenAI Reviewer.")

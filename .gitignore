@@ -41,6 +41,8 @@ models/
 # Fixed vulnerable target source
 targets/DVWA/
 targets/dvwa/
+targets/DIVA/
+targets/diva/
 
 # Generated scanner data
 data/raw/*
