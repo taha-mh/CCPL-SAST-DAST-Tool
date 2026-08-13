@@ -54,8 +54,28 @@ def run_llm_assessor(
     target_findings = findings if max_findings is None else findings[:max_findings]
     logger.info(f"Running LLM Assessor on {len(target_findings)} findings...")
 
+    # Load existing output file if present to resume progress cleanly
+    existing_map = {}
+    if output_file.exists():
+        try:
+            with open(output_file, "r", encoding="utf-8", errors="replace") as f:
+                existing_list = json.load(f)
+                if isinstance(existing_list, list):
+                    for item in existing_list:
+                        if isinstance(item, dict) and "finding_id" in item and "llm_assessment" in item:
+                            existing_map[item["finding_id"]] = item["llm_assessment"]
+        except Exception:
+            pass
+
     for index, finding in enumerate(target_findings, start=1):
         finding_id = finding.get("finding_id", f"FINDING-{index}")
+
+        # Resume Check: Skip if finding was already assessed in previous run
+        if finding_id in existing_map:
+            finding["llm_assessment"] = existing_map[finding_id]
+            logger.info(f"[{index}/{len(target_findings)}] Skipping {finding_id} (already assessed).")
+            continue
+
         logger.info(f"[{index}/{len(target_findings)}] Assessing {finding_id} ({finding.get('rule_id')})...")
 
         user_prompt = build_assessor_user_prompt(finding)
@@ -64,11 +84,9 @@ def run_llm_assessor(
         # Attach LLM assessment to finding dictionary
         finding["llm_assessment"] = assessment
 
-    # Ensure output directory exists
-    output_file.parent.mkdir(parents=True, exist_ok=True)
-
-    with open(output_file, "w", encoding="utf-8") as f:
-        json.dump(target_findings, f, indent=2, ensure_ascii=False)
+        # Incremental Auto-Save to disk after every finding (zero loss if interrupted)
+        with open(output_file, "w", encoding="utf-8") as f:
+            json.dump(target_findings, f, indent=2, ensure_ascii=False)
 
     logger.info(f"Successfully assessed {len(target_findings)} findings!")
     logger.info(f"Saved assessed findings to: {output_file}")

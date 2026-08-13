@@ -54,8 +54,28 @@ def run_llm_reviewer(
     target_findings = findings if max_findings is None else findings[:max_findings]
     logger.info(f"Running LLM Reviewer on {len(target_findings)} findings...")
 
+    # Load existing output file if present to resume progress cleanly
+    existing_map = {}
+    if output_file.exists():
+        try:
+            with open(output_file, "r", encoding="utf-8", errors="replace") as f:
+                existing_list = json.load(f)
+                if isinstance(existing_list, list):
+                    for item in existing_list:
+                        if isinstance(item, dict) and "finding_id" in item and "llm_review" in item:
+                            existing_map[item["finding_id"]] = item["llm_review"]
+        except Exception:
+            pass
+
     for index, finding in enumerate(target_findings, start=1):
         finding_id = finding.get("finding_id", f"FINDING-{index}")
+
+        # Resume Check: Skip if finding was already reviewed in previous run
+        if finding_id in existing_map:
+            finding["llm_review"] = existing_map[finding_id]
+            logger.info(f"[{index}/{len(target_findings)}] Skipping {finding_id} (already reviewed).")
+            continue
+
         logger.info(f"[{index}/{len(target_findings)}] Reviewing {finding_id} ({finding.get('rule_id')})...")
 
         # Safely handle Pass 1 Assessor failures without wasting tokens or making false assumptions
@@ -69,19 +89,14 @@ def run_llm_reviewer(
                 "final_severity": finding.get("scanner_severity", "LOW"),
                 "confidence": "LOW",
             }
-            continue
+        else:
+            user_prompt = build_reviewer_user_prompt(finding)
+            review_verdict = query_llm(REVIEWER_SYSTEM_PROMPT, user_prompt)
+            finding["llm_review"] = review_verdict
 
-        user_prompt = build_reviewer_user_prompt(finding)
-        review_verdict = query_llm(REVIEWER_SYSTEM_PROMPT, user_prompt)
-
-        # Attach 2nd pass LLM review verdict to finding dictionary
-        finding["llm_review"] = review_verdict
-
-    # Ensure output directory exists
-    output_file.parent.mkdir(parents=True, exist_ok=True)
-
-    with open(output_file, "w", encoding="utf-8") as f:
-        json.dump(target_findings, f, indent=2, ensure_ascii=False)
+        # Incremental Auto-Save to disk after every finding (zero loss if interrupted)
+        with open(output_file, "w", encoding="utf-8") as f:
+            json.dump(target_findings, f, indent=2, ensure_ascii=False)
 
     logger.info(f"Successfully reviewed {len(target_findings)} findings!")
     logger.info(f"Saved reviewed findings to: {output_file}")
