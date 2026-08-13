@@ -26,11 +26,13 @@ logger = logging.getLogger(__name__)
 def run_llm_assessor(
     input_json_path: str = "data/normalized/findings_with_context.json",
     output_json_path: str = "data/normalized/assessed_findings.json",
-    max_findings: int | None = 3,
+    start_index: int | None = None,
+    end_index: int | None = None,
 ) -> list[dict]:
     """
     Reads normalized findings with code context, executes LLM assessment pass
     via central query_llm provider, and attaches the AI assessment dictionary.
+    Supports optional start_index and end_index range slicing.
     """
     input_file = Path(input_json_path).resolve()
     output_file = Path(output_json_path).resolve()
@@ -51,7 +53,8 @@ def run_llm_assessor(
         logger.error(f"Input findings JSON must contain a list, got {type(findings).__name__}.")
         return []
 
-    target_findings = findings if max_findings is None else findings[:max_findings]
+    start = (start_index - 1) if (start_index and start_index > 0) else 0
+    target_findings = findings[start:end_index] if end_index else findings[start:]
     logger.info(f"Running LLM Assessor on {len(target_findings)} findings...")
 
     # Load existing output file if present to resume progress cleanly

@@ -26,11 +26,13 @@ logger = logging.getLogger(__name__)
 def run_llm_reviewer(
     input_json_path: str = "data/normalized/assessed_findings.json",
     output_json_path: str = "data/normalized/reviewed_findings.json",
-    max_findings: int | None = 3,
+    start_index: int | None = None,
+    end_index: int | None = None,
 ) -> list[dict]:
     """
     Reads assessed findings, performs 2nd pass Senior Audit Reviewer evaluation
     via central query_llm provider, and attaches the review verdict dictionary.
+    Supports optional start_index and end_index range slicing.
     """
     input_file = Path(input_json_path).resolve()
     output_file = Path(output_json_path).resolve()
@@ -51,7 +53,8 @@ def run_llm_reviewer(
         logger.error(f"Input assessed findings JSON must contain a list, got {type(findings).__name__}.")
         return []
 
-    target_findings = findings if max_findings is None else findings[:max_findings]
+    start = (start_index - 1) if (start_index and start_index > 0) else 0
+    target_findings = findings[start:end_index] if end_index else findings[start:]
     logger.info(f"Running LLM Reviewer on {len(target_findings)} findings...")
 
     # Load existing output file if present to resume progress cleanly
