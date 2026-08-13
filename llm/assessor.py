@@ -8,6 +8,11 @@ Responsibility:
 4. Save results to data/normalized/assessed_findings.json.
 """
 
+import json
+import logging
+import sys
+from pathlib import Path
+
 # Import prompt templates and central LLM provider
 sys.path.append(str(Path(__file__).resolve().parents[1]))
 from prompts.assessor_prompt import ASSESSOR_SYSTEM_PROMPT, build_assessor_user_prompt
