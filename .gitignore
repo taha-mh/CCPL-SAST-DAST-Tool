@@ -37,6 +37,8 @@ models/
 *.pt
 *.pth
 *.ckpt
+.geminiignore
+.aiexclude
 
 # Fixed vulnerable target source
 targets/DVWA/

@@ -35,10 +35,18 @@ def run_llm_assessor(
         return []
 
     logger.info(f"Loading findings from: {input_file}")
-    with open(input_file, "r", encoding="utf-8", errors="replace") as f:
-        findings = json.load(f)
+    try:
+        with open(input_file, "r", encoding="utf-8", errors="replace") as f:
+            findings = json.load(f)
+    except Exception as exc:
+        logger.error(f"Failed to parse input findings JSON file ({input_file}): {exc}")
+        return []
 
-    target_findings = findings[:max_findings] if max_findings else findings
+    if not isinstance(findings, list):
+        logger.error(f"Input findings JSON must contain a list, got {type(findings).__name__}.")
+        return []
+
+    target_findings = findings if max_findings is None else findings[:max_findings]
     logger.info(f"Running LLM Assessor on {len(target_findings)} findings...")
 
     for index, finding in enumerate(target_findings, start=1):
