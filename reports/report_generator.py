@@ -303,8 +303,8 @@ def generate_html_report(reviewed_findings: list, output_html_path: str = "repor
                 <p style="margin-top: 0.4rem;">{reasoning}</p>
             </div>
 
-            <strong>Remediation Recommendation:</strong>
-            <pre><code>{remediation}</code></pre>
+            <strong style="display: block; margin-top: 0.75rem;">Remediation Recommendation:</strong>
+            <div class="remediation-box">{remediation}</div>
 
             <strong style="display: block; margin-top: 0.75rem;">{loc['context_label']}</strong>
             <pre><code>{loc['context_data']}</code></pre>

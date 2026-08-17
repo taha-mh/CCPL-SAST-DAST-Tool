@@ -152,10 +152,11 @@
         .finding-card {
             background: #ffffff;
             border: 1px solid var(--card-border);
+            border-top: 4px solid var(--brand-indigo);
             border-radius: 12px;
-            padding: 1.6rem;
-            margin-bottom: 1.5rem;
-            box-shadow: 0 4px 15px rgba(15, 23, 42, 0.03);
+            padding: 1.8rem;
+            margin-bottom: 2rem;
+            box-shadow: 0 4px 16px rgba(15, 23, 42, 0.04);
             max-width: 100%;
             overflow-wrap: anywhere;
             word-break: break-word;
@@ -196,15 +197,17 @@
             border: 1px solid var(--accent-green-border);
         }
 
+        /* Clean, highly readable light theme evidence box */
         pre {
             background: #f8fafc;
             padding: 1.1rem;
             border-radius: 8px;
             overflow-x: auto;
-            border: 1px solid var(--card-border);
+            border: 1px solid #cbd5e1;
+            border-left: 4px solid #64748b;
             font-family: 'Fira Code', monospace;
             font-size: 0.88rem;
-            color: var(--text-primary);
+            color: #0f172a;
             margin-top: 0.5rem;
             white-space: pre-wrap;
             word-break: break-all;
@@ -220,6 +223,20 @@
             font-size: 0.92rem;
             color: #1e3a8a;
             word-break: break-word;
+        }
+
+        .remediation-box {
+            background: #f0fdf4;
+            border: 1px solid #bbf7d0;
+            border-left: 4px solid #16a34a;
+            padding: 1.1rem;
+            margin: 0.5rem 0 1.1rem 0;
+            border-radius: 0 8px 8px 0;
+            font-size: 0.92rem;
+            color: #14532d;
+            font-family: 'Outfit', sans-serif;
+            word-break: break-word;
+            white-space: pre-wrap;
         }
 
         .toggle-section {
