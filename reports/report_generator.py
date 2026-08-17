@@ -126,9 +126,10 @@ def generate_markdown_report(reviewed_findings: list, output_md_path: str = "rep
     """Generates a clean, structured Markdown security report from reviewed findings."""
     meta = get_report_meta(reviewed_findings)
 
-    # Strictly require Reviewer verdict == 'confirmed'
+    # 3-State Verdict Separation
     confirmed = [f for f in reviewed_findings if get_review_verdict(f) == "confirmed"]
-    discarded = [f for f in reviewed_findings if f not in confirmed]
+    rejected = [f for f in reviewed_findings if get_review_verdict(f) == "rejected"]
+    needs_review = [f for f in reviewed_findings if f not in confirmed and f not in rejected]
 
     # Calculate severity counts for confirmed findings
     severity_counts = {"CRITICAL": 0, "HIGH": 0, "MEDIUM": 0, "LOW": 0, "INFO": 0}
@@ -152,7 +153,8 @@ def generate_markdown_report(reviewed_findings: list, output_md_path: str = "rep
         "",
         f"- **Total Candidate Findings Evaluated:** {len(reviewed_findings)}",
         f"- **Confirmed Vulnerabilities:** {len(confirmed)}",
-        f"- **Discarded / Unconfirmed Findings:** {len(discarded)}",
+        f"- **Rejected False Positives:** {len(rejected)}",
+        f"- **Requires Manual Verification:** {len(needs_review)}",
         "",
         "| Severity | Count |",
         "|---|---|",
@@ -197,21 +199,35 @@ def generate_markdown_report(reviewed_findings: list, output_md_path: str = "rep
             md_lines.append("---")
             md_lines.append("")
 
-    md_lines.extend(["## Appendix: Discarded / Unconfirmed Findings", ""])
-    if not discarded:
-        md_lines.append("*No findings were discarded during this evaluation.*")
+    md_lines.extend(["## Appendix: Rejected False Positives", ""])
+    if not rejected:
+        md_lines.append("*No findings were rejected during this evaluation.*")
     else:
         md_lines.append("| Finding ID | Rule ID | Location | Reviewer Verdict | Audit Reason |")
         md_lines.append("|---|---|---|---|---|")
-        for f in discarded:
+        for f in rejected:
             f_id = f.get("finding_id", "UNKNOWN")
             rule_id = f.get("rule_id", "UNKNOWN")
             loc = get_location_info(f)
             review = f.get("llm_review", {})
             assessment = f.get("llm_assessment", {})
-            verdict = get_review_verdict(f).upper()
             reason = review.get("review_reason") or assessment.get("reasoning") or "Evaluated as non-exploitable context."
-            md_lines.append(f"| `{f_id}` | `{rule_id}` | {loc['display_text']} | `{verdict}` | {reason} |")
+            md_lines.append(f"| `{f_id}` | `{rule_id}` | {loc['display_text']} | `REJECTED` | {reason} |")
+
+    md_lines.extend(["", "## Appendix: Requires Manual Verification", ""])
+    if not needs_review:
+        md_lines.append("*No findings require manual verification.*")
+    else:
+        md_lines.append("| Finding ID | Rule ID | Location | Reviewer Verdict | Audit Reason |")
+        md_lines.append("|---|---|---|---|---|")
+        for f in needs_review:
+            f_id = f.get("finding_id", "UNKNOWN")
+            rule_id = f.get("rule_id", "UNKNOWN")
+            loc = get_location_info(f)
+            review = f.get("llm_review", {})
+            assessment = f.get("llm_assessment", {})
+            reason = review.get("review_reason") or assessment.get("reasoning") or "Evidence incomplete; manual verification recommended."
+            md_lines.append(f"| `{f_id}` | `{rule_id}` | {loc['display_text']} | `NEEDS_REVIEW` | {reason} |")
 
     report_content = "\n".join(md_lines)
     output_file = Path(output_md_path).resolve()
@@ -227,9 +243,10 @@ def generate_html_report(reviewed_findings: list, output_html_path: str = "repor
     """Generates a modern HTML security dashboard report using reports/report_template.html."""
     meta = get_report_meta(reviewed_findings)
 
-    # Strictly require Reviewer verdict == 'confirmed'
+    # 3-State Verdict Separation
     confirmed = [f for f in reviewed_findings if get_review_verdict(f) == "confirmed"]
-    discarded = [f for f in reviewed_findings if f not in confirmed]
+    rejected = [f for f in reviewed_findings if get_review_verdict(f) == "rejected"]
+    needs_review = [f for f in reviewed_findings if f not in confirmed and f not in rejected]
 
     # Convert frontend/logo.webp to base64 if present
     logo_b64 = ""
@@ -255,10 +272,15 @@ def generate_html_report(reviewed_findings: list, output_html_path: str = "repor
         title = f.get("title") or f.get("vulnerability_type") or "Security Issue"
         loc = get_location_info(f)
         verdict = get_review_verdict(f)
-        is_conf = verdict == "confirmed"
         sev = get_final_severity(f)
 
-        verdict_badge = "<span class='badge badge-high'>CONFIRMED</span>" if is_conf else f"<span class='badge badge-low'>{verdict.upper()}</span>"
+        if verdict == "confirmed":
+            verdict_badge = "<span class='badge badge-high'>CONFIRMED</span>"
+        elif verdict == "rejected":
+            verdict_badge = "<span class='badge badge-low'>REJECTED</span>"
+        else:
+            verdict_badge = "<span class='badge badge-medium'>NEEDS REVIEW</span>"
+
         sev_badge = f"<span class='badge badge-high'>{sev}</span>" if sev in ("CRITICAL", "HIGH") else (f"<span class='badge badge-medium'>{sev}</span>" if sev == "MEDIUM" else f"<span class='badge badge-low'>{sev}</span>")
 
         matrix_rows.append(f"""
@@ -311,25 +333,24 @@ def generate_html_report(reviewed_findings: list, output_html_path: str = "repor
         </div>
         """)
 
-    # Build Discarded Cards
-    discarded_cards = []
-    if not discarded:
-        discarded_cards.append("<div class='finding-card'><p>No false positives were discarded in this evaluation.</p></div>")
+    # Build Rejected Cards
+    rejected_cards = []
+    if not rejected:
+        rejected_cards.append("<div class='finding-card'><p>No false positives were rejected in this evaluation.</p></div>")
     else:
-        for f in discarded:
+        for f in rejected:
             f_id = f.get("finding_id", "UNKNOWN")
             title = f.get("title") or f.get("vulnerability_type") or "Security Issue"
             loc = get_location_info(f)
-            verdict = get_review_verdict(f).upper()
 
             review = f.get("llm_review", {})
             assessment = f.get("llm_assessment", {})
             reasoning = review.get("review_reason") or assessment.get("reasoning", "Evaluated as non-exploitable context.")
 
-            discarded_cards.append(f"""
-        <div class="finding-card" style="border-left: 4px solid var(--accent-green-text);">
+            rejected_cards.append(f"""
+        <div class="finding-card" style="border-top: 4px solid var(--accent-green-text);">
             <div>
-                <span class="badge badge-low">{verdict}</span>
+                <span class="badge badge-low">REJECTED FALSE POSITIVE</span>
                 <strong style="margin-left: 0.5rem; font-size: 1.1rem;">{f_id}: {title}</strong>
             </div>
             <p style="color: var(--text-muted); font-size: 0.88rem; margin-top: 0.5rem;">
@@ -337,7 +358,41 @@ def generate_html_report(reviewed_findings: list, output_html_path: str = "repor
             </p>
 
             <div class="reasoning-box" style="background: var(--accent-green-bg); border-left-color: var(--accent-green-text); color: var(--accent-green-text);">
-                <strong>AI Reason for Verdict ({verdict}):</strong>
+                <strong>AI Reason for Rejection:</strong>
+                <p style="margin-top: 0.4rem;">{reasoning}</p>
+            </div>
+
+            <strong style="display: block; margin-top: 0.75rem;">{loc['context_label']}</strong>
+            <pre><code>{loc['context_data']}</code></pre>
+        </div>
+        """)
+
+    # Build Needs Review Cards
+    needs_review_cards = []
+    if not needs_review:
+        needs_review_cards.append("<div class='finding-card'><p>No findings require manual verification.</p></div>")
+    else:
+        for f in needs_review:
+            f_id = f.get("finding_id", "UNKNOWN")
+            title = f.get("title") or f.get("vulnerability_type") or "Security Issue"
+            loc = get_location_info(f)
+
+            review = f.get("llm_review", {})
+            assessment = f.get("llm_assessment", {})
+            reasoning = review.get("review_reason") or assessment.get("reasoning", "Evidence incomplete; manual verification recommended.")
+
+            needs_review_cards.append(f"""
+        <div class="finding-card" style="border-top: 4px solid #f59e0b;">
+            <div>
+                <span class="badge badge-medium">REQUIRES MANUAL VERIFICATION</span>
+                <strong style="margin-left: 0.5rem; font-size: 1.1rem;">{f_id}: {title}</strong>
+            </div>
+            <p style="color: var(--text-muted); font-size: 0.88rem; margin-top: 0.5rem;">
+                <strong>Location:</strong> {loc['html_display']} | <strong>Rule:</strong> <code>{f.get('rule_id')}</code>
+            </p>
+
+            <div class="reasoning-box" style="background: #fffbeb; border-left-color: #f59e0b; color: #92400e;">
+                <strong>AI Reason for Manual Verification:</strong>
                 <p style="margin-top: 0.4rem;">{reasoning}</p>
             </div>
 
@@ -356,10 +411,12 @@ def generate_html_report(reviewed_findings: list, output_html_path: str = "repor
         .replace("{{REPORT_TIMESTAMP}}", datetime.now().strftime("%Y-%m-%d %H:%M:%S"))
         .replace("{{TOTAL_EVALUATED}}", str(len(reviewed_findings)))
         .replace("{{CONFIRMED_COUNT}}", str(len(confirmed)))
-        .replace("{{DISCARDED_COUNT}}", str(len(discarded)))
+        .replace("{{REJECTED_COUNT}}", str(len(rejected)))
+        .replace("{{NEEDS_REVIEW_COUNT}}", str(len(needs_review)))
         .replace("{{MATRIX_ROWS}}", "".join(matrix_rows))
         .replace("{{CONFIRMED_CARDS}}", "".join(confirmed_cards))
-        .replace("{{DISCARDED_CARDS}}", "".join(discarded_cards))
+        .replace("{{REJECTED_CARDS}}", "".join(rejected_cards))
+        .replace("{{NEEDS_REVIEW_CARDS}}", "".join(needs_review_cards))
     )
 
     output_file = Path(output_html_path).resolve()

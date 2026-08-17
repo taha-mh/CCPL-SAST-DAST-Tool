@@ -282,18 +282,22 @@
             </div>
         </div>
 
-        <div class="stats-grid">
-            <div class="stat-card evaluated" onclick="showView('matrix')">
+        <div class="stats-grid" style="grid-template-columns: repeat(4, 1fr);">
+            <div class="stat-card evaluated" onclick="showView('matrix')" style="cursor: pointer;">
                 <div class="stat-label">Evaluated Findings</div>
                 <div class="stat-number blue">{{TOTAL_EVALUATED}}</div>
             </div>
-            <div class="stat-card confirmed" onclick="showView('confirmed')">
+            <div class="stat-card confirmed" onclick="showView('confirmed')" style="cursor: pointer;">
                 <div class="stat-label">Confirmed Risks</div>
                 <div class="stat-number red">{{CONFIRMED_COUNT}}</div>
             </div>
-            <div class="stat-card discarded" onclick="showView('discarded')">
-                <div class="stat-label">False Positives Discarded</div>
-                <div class="stat-number green">{{DISCARDED_COUNT}}</div>
+            <div class="stat-card discarded" onclick="showView('rejected')" style="cursor: pointer;">
+                <div class="stat-label">Rejected False Positives</div>
+                <div class="stat-number green">{{REJECTED_COUNT}}</div>
+            </div>
+            <div class="stat-card needs-review" onclick="showView('needs_review')" style="background: #fffbeb; border-color: #fde68a; cursor: pointer;">
+                <div class="stat-label" style="color: #92400e;">Requires Verification</div>
+                <div class="stat-number" style="color: #d97706;">{{NEEDS_REVIEW_COUNT}}</div>
             </div>
         </div>
 
@@ -322,9 +326,14 @@
             {{CONFIRMED_CARDS}}
         </div>
 
-        <div id="section-discarded" class="view-section" style="display: none;">
-            <h2 class="section-title">Section 2: Discarded & Audit Log</h2>
-            {{DISCARDED_CARDS}}
+        <div id="section-rejected" class="view-section" style="display: none;">
+            <h2 class="section-title">Section 2: Rejected False Positives</h2>
+            {{REJECTED_CARDS}}
+        </div>
+
+        <div id="section-needs-review" class="view-section" style="display: none;">
+            <h2 class="section-title">Section 3: Requires Manual Verification</h2>
+            {{NEEDS_REVIEW_CARDS}}
         </div>
     </div>
 
@@ -332,7 +341,8 @@
         function showView(view) {
             document.getElementById('section-matrix').style.display = (view === 'matrix') ? 'block' : 'none';
             document.getElementById('section-confirmed').style.display = (view === 'confirmed') ? 'block' : 'none';
-            document.getElementById('section-discarded').style.display = (view === 'discarded') ? 'block' : 'none';
+            document.getElementById('section-rejected').style.display = (view === 'rejected') ? 'block' : 'none';
+            document.getElementById('section-needs-review').style.display = (view === 'needs_review') ? 'block' : 'none';
         }
     </script>
 </body>

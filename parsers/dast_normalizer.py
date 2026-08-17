@@ -11,6 +11,7 @@ Responsibility:
 import json
 import logging
 from pathlib import Path
+import requests
 
 logging.basicConfig(level=logging.INFO, format="[%(asctime)s] %(levelname)s: %(message)s")
 logger = logging.getLogger(__name__)
@@ -25,13 +26,54 @@ SEVERITY_MAP = {
 }
 
 
+def fetch_live_http_headers(url: str, method: str = "GET") -> dict:
+    """
+    Controlled fetch of live HTTP response metadata.
+    Safely inspects actual HTTP response headers without mutating target state.
+    """
+    if not url or not url.startswith("http"):
+        return {"status": "FAILED", "reason": "Invalid or missing target URL"}
+
+    method = method.upper()
+    try:
+        if method == "POST":
+            resp = requests.get(url, timeout=2)
+        elif method == "HEAD":
+            resp = requests.head(url, timeout=2)
+        else:
+            resp = requests.get(url, timeout=2)
+
+        headers_dict = dict(resp.headers)
+        lower_keys = {k.lower(): (k, v) for k, v in headers_dict.items()}
+
+        sec_headers = ["X-Content-Type-Options", "X-Frame-Options", "Content-Security-Policy", "Strict-Transport-Security"]
+        header_status = {}
+        for sh in sec_headers:
+            if sh.lower() in lower_keys:
+                orig_key, val = lower_keys[sh.lower()]
+                header_status[sh] = val if val != "" else "[EMPTY]"
+            else:
+                header_status[sh] = "[NOT PRESENT]"
+
+        return {
+            "status": "SUCCESS",
+            "status_code": resp.status_code,
+            "content_type": headers_dict.get("Content-Type", "N/A"),
+            "x_powered_by": headers_dict.get("X-Powered-By", "N/A"),
+            "set_cookie": headers_dict.get("Set-Cookie", "N/A"),
+            "sec_headers": header_status,
+        }
+    except Exception as e:
+        return {"status": "FAILED", "reason": str(e)}
+
+
 def normalize_dast_findings(
     raw_json_path: str = "data/raw/dast_findings.json",
     output_json_path: str = "data/normalized/dast_normalized.json",
 ) -> list[dict]:
     """
     Normalizes raw ZAP DAST findings and formats HTTP Request/Response evidence context.
-    Strictly separates observed HTTP evidence from scanner description text and missing evidence.
+    Enriches evidence with live HTTP response headers to eliminate missing header evidence gaps.
     """
     raw_path = (BASE_DIR / raw_json_path).resolve()
     output_path = (BASE_DIR / output_json_path).resolve()
@@ -45,7 +87,7 @@ def normalize_dast_findings(
         raw_payload = json.load(f)
 
     raw_results = raw_payload.get("dast_raw_results", [])
-    logger.info(f"Normalizing {len(raw_results)} raw DAST findings...")
+    logger.info(f"Normalizing {len(raw_results)} raw DAST findings with live header enrichment...")
 
     normalized_list: list[dict] = []
     for idx, item in enumerate(raw_results, start=1):
@@ -60,7 +102,7 @@ def normalize_dast_findings(
         raw_description = item.get("test_description", "").strip()
         plugin_id_str = str(item.get("category", ""))
 
-        # 1. Reliable scan_type classification (do not guess blindly)
+        # 1. Reliable scan_type classification
         source_id = str(item.get("sourceid", ""))
         if source_id in ["1", "2"]:
             scan_type = "passive"
@@ -83,7 +125,10 @@ def normalize_dast_findings(
             tested_header = "N/A"
             parameter_tested = raw_param if raw_param else "N/A"
 
-        # 3. Format Observed Evidence vs Scanner Description vs Missing Evidence
+        # Live HTTP Response Header Fetch
+        live_res = fetch_live_http_headers(affected_url, http_method)
+
+        # 3. Format Structured Evidence Blocks
         evidence_blocks = []
         evidence_blocks.append("=== DAST LIVE HTTP EVIDENCE ===")
         evidence_blocks.append(f"Scan Type: {scan_type}")
@@ -93,6 +138,20 @@ def normalize_dast_findings(
             evidence_blocks.append(f"Tested Response Header: {tested_header}")
         if parameter_tested != "N/A":
             evidence_blocks.append(f"Tested Parameter: {parameter_tested}")
+
+        # CAPTURED HTTP RESPONSE SECTION
+        evidence_blocks.append("\n[CAPTURED HTTP RESPONSE]")
+        if live_res.get("status") == "SUCCESS":
+            evidence_blocks.append(f"HTTP Status: {live_res['status_code']}")
+            evidence_blocks.append(f"Content-Type: {live_res['content_type']}")
+            if live_res["x_powered_by"] != "N/A":
+                evidence_blocks.append(f"X-Powered-By: {live_res['x_powered_by']}")
+            if live_res["set_cookie"] != "N/A":
+                evidence_blocks.append(f"Set-Cookie: {live_res['set_cookie']}")
+            for sh, val in live_res["sec_headers"].items():
+                evidence_blocks.append(f"{sh}: {val}")
+        else:
+            evidence_blocks.append(f"[LIVE HTTP CAPTURE STATUS] Status: FAILED | Reason: {live_res.get('reason')}")
 
         # OBSERVED EVIDENCE SECTION
         observed_items = []
