@@ -55,6 +55,7 @@ reports/*.html
 reports/*.md
 reports/*.pdf
 !reports/.gitkeep
+!reports/report_template.html
 
 # Logs and temporary runtime files
 logs/
