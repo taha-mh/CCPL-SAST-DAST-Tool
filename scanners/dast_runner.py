@@ -132,8 +132,21 @@ def run_dast_scan(
 
         # Step 3: Fetch Alerts & Format Findings
         zap_alerts = zap.core.alerts(baseurl=target_base_url)
-        raw_findings: list[dict] = [
-            {
+        raw_findings: list[dict] = []
+        for idx, alert in enumerate(zap_alerts, start=1):
+            msg_id = alert.get("messageId") or alert.get("msgId")
+            resp_header_str = ""
+            req_header_str = ""
+            if msg_id:
+                try:
+                    msg_data = zap.core.message(id=msg_id)
+                    if isinstance(msg_data, dict):
+                        resp_header_str = msg_data.get("responseHeader", "")
+                        req_header_str = msg_data.get("requestHeader", "")
+                except Exception as e:
+                    logger.warning(f"Could not fetch message {msg_id} from ZAP: {e}")
+
+            raw_findings.append({
                 "finding_id": f"ZAP-RAW-{idx:03d}",
                 "vulnerability_type": alert.get("name", "Security Vulnerability"),
                 "category": alert.get("pluginId", "zap_alert"),
@@ -145,9 +158,10 @@ def run_dast_scan(
                 "payload_used": alert.get("attack", alert.get("evidence", "")),
                 "test_description": alert.get("description", "OWASP ZAP Alert"),
                 "evidence_snippet": alert.get("evidence", alert.get("other", "ZAP Alert Evidence")),
-            }
-            for idx, alert in enumerate(zap_alerts, start=1)
-        ]
+                "zap_message_id": str(msg_id) if msg_id else "N/A",
+                "response_headers": resp_header_str,
+                "request_headers": req_header_str,
+            })
 
         output_payload = {
             "scanner": "OWASP ZAP API Daemon",

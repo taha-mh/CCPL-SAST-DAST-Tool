@@ -1,17 +1,6 @@
-"""
-DAST Normalizer & HTTP Context Module for CCPL Web Security Tool.
-
-Responsibility:
-1. Load raw ZAP findings from data/raw/dast_findings.json.
-2. Standardize fields into unified JSON schema.
-3. Format DAST finding evidence summary into code_context string.
-4. Save normalized findings to data/normalized/dast_normalized.json.
-"""
-
 import json
 import logging
 from pathlib import Path
-import requests
 
 logging.basicConfig(level=logging.INFO, format="[%(asctime)s] %(levelname)s: %(message)s")
 logger = logging.getLogger(__name__)
@@ -26,45 +15,50 @@ SEVERITY_MAP = {
 }
 
 
-def fetch_live_http_headers(url: str, method: str = "GET") -> dict:
+def parse_zap_response_headers(raw_headers_text: str) -> dict:
     """
-    Controlled fetch of live HTTP response metadata.
-    Safely inspects actual HTTP response headers without mutating target state.
+    Parses raw HTTP response header text captured directly by OWASP ZAP during scan.
+    Strictly zero network calls made.
     """
-    if not url or not url.startswith("http"):
-        return {"status": "FAILED", "reason": "Invalid or missing target URL"}
+    if not raw_headers_text or not isinstance(raw_headers_text, str) or not raw_headers_text.strip():
+        return {"status": "FAILED", "reason": "No response headers captured by ZAP"}
 
-    method = method.upper()
-    try:
-        if method == "POST":
-            resp = requests.get(url, timeout=2)
-        elif method == "HEAD":
-            resp = requests.head(url, timeout=2)
+    lines = [line.strip() for line in raw_headers_text.splitlines() if line.strip()]
+    if not lines:
+        return {"status": "FAILED", "reason": "Empty response header lines"}
+
+    # Extract Status Code from status line (e.g. HTTP/1.1 200 OK)
+    status_line = lines[0]
+    status_code = "N/A"
+    status_parts = status_line.split()
+    if len(status_parts) >= 2 and status_parts[1].isdigit():
+        status_code = status_parts[1]
+
+    headers_dict = {}
+    for line in lines[1:]:
+        if ":" in line:
+            k, v = line.split(":", 1)
+            headers_dict[k.strip()] = v.strip()
+
+    lower_keys = {k.lower(): (k, v) for k, v in headers_dict.items()}
+
+    sec_headers = ["X-Content-Type-Options", "X-Frame-Options", "Content-Security-Policy", "Strict-Transport-Security"]
+    header_status = {}
+    for sh in sec_headers:
+        if sh.lower() in lower_keys:
+            orig_key, val = lower_keys[sh.lower()]
+            header_status[sh] = val if val != "" else "[EMPTY]"
         else:
-            resp = requests.get(url, timeout=2)
+            header_status[sh] = "[NOT PRESENT]"
 
-        headers_dict = dict(resp.headers)
-        lower_keys = {k.lower(): (k, v) for k, v in headers_dict.items()}
-
-        sec_headers = ["X-Content-Type-Options", "X-Frame-Options", "Content-Security-Policy", "Strict-Transport-Security"]
-        header_status = {}
-        for sh in sec_headers:
-            if sh.lower() in lower_keys:
-                orig_key, val = lower_keys[sh.lower()]
-                header_status[sh] = val if val != "" else "[EMPTY]"
-            else:
-                header_status[sh] = "[NOT PRESENT]"
-
-        return {
-            "status": "SUCCESS",
-            "status_code": resp.status_code,
-            "content_type": headers_dict.get("Content-Type", "N/A"),
-            "x_powered_by": headers_dict.get("X-Powered-By", "N/A"),
-            "set_cookie": headers_dict.get("Set-Cookie", "N/A"),
-            "sec_headers": header_status,
-        }
-    except Exception as e:
-        return {"status": "FAILED", "reason": str(e)}
+    return {
+        "status": "SUCCESS",
+        "status_code": status_code,
+        "content_type": headers_dict.get("Content-Type", headers_dict.get("content-type", "N/A")),
+        "x_powered_by": headers_dict.get("X-Powered-By", headers_dict.get("x-powered-by", "N/A")),
+        "set_cookie": headers_dict.get("Set-Cookie", headers_dict.get("set-cookie", "N/A")),
+        "sec_headers": header_status,
+    }
 
 
 def normalize_dast_findings(
@@ -73,7 +67,7 @@ def normalize_dast_findings(
 ) -> list[dict]:
     """
     Normalizes raw ZAP DAST findings and formats HTTP Request/Response evidence context.
-    Enriches evidence with live HTTP response headers to eliminate missing header evidence gaps.
+    Uses ONLY HTTP response evidence captured by OWASP ZAP during its scan.
     """
     raw_path = (BASE_DIR / raw_json_path).resolve()
     output_path = (BASE_DIR / output_json_path).resolve()
@@ -87,7 +81,7 @@ def normalize_dast_findings(
         raw_payload = json.load(f)
 
     raw_results = raw_payload.get("dast_raw_results", [])
-    logger.info(f"Normalizing {len(raw_results)} raw DAST findings with live header enrichment...")
+    logger.info(f"Normalizing {len(raw_results)} raw DAST findings using ZAP-captured HTTP evidence...")
 
     normalized_list: list[dict] = []
     for idx, item in enumerate(raw_results, start=1):
@@ -100,6 +94,7 @@ def normalize_dast_findings(
         raw_attack = item.get("payload_used", "").strip()
         raw_evidence = item.get("evidence_snippet", "").strip()
         raw_description = item.get("test_description", "").strip()
+        raw_resp_headers = item.get("response_headers", "").strip()
         plugin_id_str = str(item.get("category", ""))
 
         # 1. Reliable scan_type classification
@@ -125,8 +120,8 @@ def normalize_dast_findings(
             tested_header = "N/A"
             parameter_tested = raw_param if raw_param else "N/A"
 
-        # Live HTTP Response Header Fetch
-        live_res = fetch_live_http_headers(affected_url, http_method)
+        # Parse ZAP's captured response headers (NO network calls)
+        parsed_res = parse_zap_response_headers(raw_resp_headers)
 
         # 3. Format Structured Evidence Blocks
         evidence_blocks = []
@@ -141,17 +136,17 @@ def normalize_dast_findings(
 
         # CAPTURED HTTP RESPONSE SECTION
         evidence_blocks.append("\n[CAPTURED HTTP RESPONSE]")
-        if live_res.get("status") == "SUCCESS":
-            evidence_blocks.append(f"HTTP Status: {live_res['status_code']}")
-            evidence_blocks.append(f"Content-Type: {live_res['content_type']}")
-            if live_res["x_powered_by"] != "N/A":
-                evidence_blocks.append(f"X-Powered-By: {live_res['x_powered_by']}")
-            if live_res["set_cookie"] != "N/A":
-                evidence_blocks.append(f"Set-Cookie: {live_res['set_cookie']}")
-            for sh, val in live_res["sec_headers"].items():
+        if parsed_res.get("status") == "SUCCESS":
+            evidence_blocks.append(f"HTTP Status: {parsed_res['status_code']}")
+            evidence_blocks.append(f"Content-Type: {parsed_res['content_type']}")
+            if parsed_res["x_powered_by"] != "N/A":
+                evidence_blocks.append(f"X-Powered-By: {parsed_res['x_powered_by']}")
+            if parsed_res["set_cookie"] != "N/A":
+                evidence_blocks.append(f"Set-Cookie: {parsed_res['set_cookie']}")
+            for sh, val in parsed_res["sec_headers"].items():
                 evidence_blocks.append(f"{sh}: {val}")
         else:
-            evidence_blocks.append(f"[LIVE HTTP CAPTURE STATUS] Status: FAILED | Reason: {live_res.get('reason')}")
+            evidence_blocks.append(f"[ZAP CAPTURED RESPONSE STATUS] Status: NO_RESPONSE_HEADER_CAPTURED_BY_ZAP")
 
         # OBSERVED EVIDENCE SECTION
         observed_items = []
