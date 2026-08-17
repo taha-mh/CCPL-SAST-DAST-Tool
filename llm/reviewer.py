@@ -67,8 +67,11 @@ def run_llm_reviewer(
                 existing_list = json.load(f)
                 if isinstance(existing_list, list):
                     for item in existing_list:
-                        if isinstance(item, dict) and "finding_id" in item and "llm_review" in item:
-                            existing_map[item["finding_id"]] = item["llm_review"]
+                        if isinstance(item, dict) and "finding_id" in item:
+                            review = item.get("llm_review", {})
+                            # Only skip if previous review was SUCCESSFUL
+                            if isinstance(review, dict) and review.get("llm_status") == "success":
+                                existing_map[item["finding_id"]] = review
         except Exception:
             pass
 

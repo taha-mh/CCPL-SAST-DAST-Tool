@@ -67,8 +67,11 @@ def run_llm_assessor(
                 existing_list = json.load(f)
                 if isinstance(existing_list, list):
                     for item in existing_list:
-                        if isinstance(item, dict) and "finding_id" in item and "llm_assessment" in item:
-                            existing_map[item["finding_id"]] = item["llm_assessment"]
+                        if isinstance(item, dict) and "finding_id" in item:
+                            assessment = item.get("llm_assessment", {})
+                            # Only skip if previous assessment was SUCCESSFUL
+                            if isinstance(assessment, dict) and assessment.get("llm_status") == "success":
+                                existing_map[item["finding_id"]] = assessment
         except Exception:
             pass
 
