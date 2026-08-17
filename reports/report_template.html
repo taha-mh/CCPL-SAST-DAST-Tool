@@ -266,60 +266,56 @@
         </div>
 
         <div class="stats-grid">
-            <div class="stat-card evaluated">
+            <div class="stat-card evaluated" onclick="showView('matrix')">
                 <div class="stat-label">Evaluated Findings</div>
                 <div class="stat-number blue">{{TOTAL_EVALUATED}}</div>
             </div>
-            <div class="stat-card confirmed" onclick="toggleSection('section-confirmed')">
-                <div class="stat-label">Confirmed Risks </div>
+            <div class="stat-card confirmed" onclick="showView('confirmed')">
+                <div class="stat-label">Confirmed Risks</div>
                 <div class="stat-number red">{{CONFIRMED_COUNT}}</div>
             </div>
-            <div class="stat-card discarded" onclick="toggleSection('section-discarded')">
-                <div class="stat-label">False Positives Discarded </div>
+            <div class="stat-card discarded" onclick="showView('discarded')">
+                <div class="stat-label">False Positives Discarded</div>
                 <div class="stat-number green">{{DISCARDED_COUNT}}</div>
             </div>
         </div>
 
-        <h2 class="section-title"> Security Findings Summary Matrix</h2>
-        <div class="finding-card" style="padding: 1rem; overflow-x: auto;">
-            <table style="width: 100%; border-collapse: collapse; text-align: left; font-size: 0.88rem;">
-                <thead>
-                    <tr style="background: #f1f5f9; border-bottom: 2px solid var(--card-border);">
-                        <th style="padding: 0.75rem;">Finding ID</th>
-                        <th style="padding: 0.75rem;">Vulnerability / Rule</th>
-                        <th style="padding: 0.75rem;">Location</th>
-                        <th style="padding: 0.75rem;">Severity</th>
-                        <th style="padding: 0.75rem;">AI Final Verdict</th>
-                    </tr>
-                </thead>
-                <tbody>
-                    {{MATRIX_ROWS}}
-                </tbody>
-            </table>
+        <div id="section-matrix" class="view-section">
+            <h2 class="section-title">Security Findings Summary Matrix</h2>
+            <div class="finding-card" style="padding: 1rem; overflow-x: auto;">
+                <table style="width: 100%; border-collapse: collapse; text-align: left; font-size: 0.88rem;">
+                    <thead>
+                        <tr style="background: #f1f5f9; border-bottom: 2px solid var(--card-border);">
+                            <th style="padding: 0.75rem;">Finding ID</th>
+                            <th style="padding: 0.75rem;">Vulnerability / Rule</th>
+                            <th style="padding: 0.75rem;">Location</th>
+                            <th style="padding: 0.75rem;">Severity</th>
+                            <th style="padding: 0.75rem;">AI Final Verdict</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        {{MATRIX_ROWS}}
+                    </tbody>
+                </table>
+            </div>
         </div>
 
-        <div id="section-confirmed" class="toggle-section" style="display: none;">
+        <div id="section-confirmed" class="view-section" style="display: none;">
             <h2 class="section-title">Section 1: Confirmed Security Findings</h2>
             {{CONFIRMED_CARDS}}
         </div>
 
-        <div id="section-discarded" class="toggle-section" style="display: none;">
+        <div id="section-discarded" class="view-section" style="display: none;">
             <h2 class="section-title">Section 2: Discarded & Audit Log</h2>
             {{DISCARDED_CARDS}}
         </div>
     </div>
 
     <script>
-        function toggleSection(id) {
-            var el = document.getElementById(id);
-            if (!el) return;
-            var current = window.getComputedStyle(el).display;
-            if (current === 'none') {
-                el.style.display = 'block';
-                el.scrollIntoView({ behavior: 'smooth', block: 'start' });
-            } else {
-                el.style.display = 'none';
-            }
+        function showView(view) {
+            document.getElementById('section-matrix').style.display = (view === 'matrix') ? 'block' : 'none';
+            document.getElementById('section-confirmed').style.display = (view === 'confirmed') ? 'block' : 'none';
+            document.getElementById('section-discarded').style.display = (view === 'discarded') ? 'block' : 'none';
         }
     </script>
 </body>
