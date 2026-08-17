@@ -140,7 +140,7 @@ def generate_markdown_report(reviewed_findings: list, output_md_path: str = "rep
             severity_counts["LOW"] += 1
 
     md_lines = [
-        f"# 🛡️ {meta['title']}",
+        f"# {meta['title']}",
         "",
         f"**Generated On:** {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}",
         f"**Target System:** {meta['target_system']}",
@@ -148,7 +148,7 @@ def generate_markdown_report(reviewed_findings: list, output_md_path: str = "rep
         "",
         "---",
         "",
-        "## 📊 Executive Summary",
+        "## Executive Summary",
         "",
         f"- **Total Candidate Findings Evaluated:** {len(reviewed_findings)}",
         f"- **Confirmed Vulnerabilities:** {len(confirmed)}",
@@ -160,7 +160,7 @@ def generate_markdown_report(reviewed_findings: list, output_md_path: str = "rep
     for sev, count in severity_counts.items():
         md_lines.append(f"| **{sev}** | {count} |")
 
-    md_lines.extend(["", "---", "", "##  Confirmed Security Vulnerabilities", ""])
+    md_lines.extend(["", "---", "", "## Confirmed Security Vulnerabilities", ""])
 
     if not confirmed:
         md_lines.append("*No confirmed vulnerabilities detected in the evaluated sample.*")
@@ -197,7 +197,7 @@ def generate_markdown_report(reviewed_findings: list, output_md_path: str = "rep
             md_lines.append("---")
             md_lines.append("")
 
-    md_lines.extend([" Appendix: Discarded / Unconfirmed Findings", ""])
+    md_lines.extend(["## Appendix: Discarded / Unconfirmed Findings", ""])
     if not discarded:
         md_lines.append("*No findings were discarded during this evaluation.*")
     else:
@@ -238,7 +238,7 @@ def generate_html_report(reviewed_findings: list, output_html_path: str = "repor
         with open(logo_path, "rb") as img_f:
             logo_b64 = base64.b64encode(img_f.read()).decode("utf-8")
 
-    logo_tag = f'<img src="data:image/webp;base64,{logo_b64}" alt="CCPL Logo" style="height: 38px; max-height: 38px; width: auto; max-width: 160px; object-fit: contain; vertical-align: middle; margin-right: 0.75rem; flex-shrink: 0;">' if logo_b64 else '🛡️ '
+    logo_tag = f'<img src="data:image/webp;base64,{logo_b64}" alt="CCPL Logo" style="height: 38px; max-height: 38px; width: auto; max-width: 160px; object-fit: contain; vertical-align: middle; margin-right: 0.75rem; flex-shrink: 0;">' if logo_b64 else ''
 
     # Load HTML template
     template_path = Path(__file__).resolve().parent / "report_template.html"
@@ -299,11 +299,11 @@ def generate_html_report(reviewed_findings: list, output_html_path: str = "repor
             </p>
 
             <div class="reasoning-box">
-                <strong> AI Security Reasoning & Evidence:</strong>
+                <strong>AI Security Reasoning & Evidence:</strong>
                 <p style="margin-top: 0.4rem;">{reasoning}</p>
             </div>
 
-            <strong> Remediation Recommendation:</strong>
+            <strong>Remediation Recommendation:</strong>
             <pre><code>{remediation}</code></pre>
 
             <strong style="display: block; margin-top: 0.75rem;">{loc['context_label']}</strong>
@@ -337,7 +337,7 @@ def generate_html_report(reviewed_findings: list, output_html_path: str = "repor
             </p>
 
             <div class="reasoning-box" style="background: var(--accent-green-bg); border-left-color: var(--accent-green-text); color: var(--accent-green-text);">
-                <strong> AI Reason for Verdict ({verdict}):</strong>
+                <strong>AI Reason for Verdict ({verdict}):</strong>
                 <p style="margin-top: 0.4rem;">{reasoning}</p>
             </div>
 
