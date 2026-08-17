@@ -67,7 +67,7 @@ def get_location_info(finding: dict) -> dict:
             "type": "DAST",
             "display_text": f"Target URL: `{target_url}`",
             "html_display": f"<code>{http_method} {target_url}</code>",
-            "context_label": "📄 Live HTTP Evidence Context:",
+            "context_label": "Live HTTP Evidence Context:",
             "context_data": finding.get("evidence_context", "No HTTP evidence context available."),
         }
     else:
@@ -79,7 +79,7 @@ def get_location_info(finding: dict) -> dict:
             "type": "SAST",
             "display_text": f"`{file_path}` (Lines {lines_str})",
             "html_display": f"<code>{Path(file_path).name}:{lines_str}</code>",
-            "context_label": "📄 Source Code Context:",
+            "context_label": "Source Code Context:",
             "context_data": finding.get("code_context", "No source code context available."),
         }
 
