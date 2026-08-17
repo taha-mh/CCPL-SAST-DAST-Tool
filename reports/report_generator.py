@@ -160,7 +160,7 @@ def generate_markdown_report(reviewed_findings: list, output_md_path: str = "rep
     for sev, count in severity_counts.items():
         md_lines.append(f"| **{sev}** | {count} |")
 
-    md_lines.extend(["", "---", "", "## 🚨 Confirmed Security Vulnerabilities", ""])
+    md_lines.extend(["", "---", "", "##  Confirmed Security Vulnerabilities", ""])
 
     if not confirmed:
         md_lines.append("*No confirmed vulnerabilities detected in the evaluated sample.*")
@@ -197,7 +197,7 @@ def generate_markdown_report(reviewed_findings: list, output_md_path: str = "rep
             md_lines.append("---")
             md_lines.append("")
 
-    md_lines.extend(["## 📁 Appendix: Discarded / Unconfirmed Findings", ""])
+    md_lines.extend([" Appendix: Discarded / Unconfirmed Findings", ""])
     if not discarded:
         md_lines.append("*No findings were discarded during this evaluation.*")
     else:
@@ -299,11 +299,11 @@ def generate_html_report(reviewed_findings: list, output_html_path: str = "repor
             </p>
 
             <div class="reasoning-box">
-                <strong>🤖 AI Security Reasoning & Evidence:</strong>
+                <strong> AI Security Reasoning & Evidence:</strong>
                 <p style="margin-top: 0.4rem;">{reasoning}</p>
             </div>
 
-            <strong>🛠️ Remediation Recommendation:</strong>
+            <strong> Remediation Recommendation:</strong>
             <pre><code>{remediation}</code></pre>
 
             <strong style="display: block; margin-top: 0.75rem;">{loc['context_label']}</strong>
@@ -337,7 +337,7 @@ def generate_html_report(reviewed_findings: list, output_html_path: str = "repor
             </p>
 
             <div class="reasoning-box" style="background: var(--accent-green-bg); border-left-color: var(--accent-green-text); color: var(--accent-green-text);">
-                <strong>🤖 AI Reason for Verdict ({verdict}):</strong>
+                <strong> AI Reason for Verdict ({verdict}):</strong>
                 <p style="margin-top: 0.4rem;">{reasoning}</p>
             </div>
 
