@@ -1,16 +1,16 @@
 /**
- * CCPL Web SAST Dashboard - Real-Time Streaming & Interactive Tab Logic
+ * CCPL Web Security Dashboard - Real-Time Streaming & Interactive Tab Logic
  *
  * Responsibilities:
  * 1. Fetch available target projects from GET /api/targets on page load.
  * 2. Connect to Server-Sent Events (SSE) stream GET /api/scan/stream on scan trigger.
  * 3. Stream real-time timestamped logs line-by-line into the live console window.
  * 4. Dynamically highlight active pipeline step indicators in the 6-step pathway bar.
- * 5. Support interactive Frontend Filter Tabs (Confirmed Risks vs Discarded False Positives vs All).
+ * 5. Support interactive Frontend Filter Tabs (Confirmed Risks vs False Positives vs Requires Verification vs All).
  */
 
 let currentScanData = null;
-let activeTab = 'confirmed'; // 'confirmed', 'discarded', 'all'
+let activeTab = 'confirmed'; // 'confirmed', 'discarded', 'needs_review', 'all'
 
 document.addEventListener('DOMContentLoaded', () => {
     fetchTargets();
@@ -21,36 +21,27 @@ document.addEventListener('DOMContentLoaded', () => {
         scanBtn.addEventListener('click', handleScanSubmit);
     }
 
-    const pipelineSelect = document.getElementById('pipeline-select');
-    if (pipelineSelect) {
-        pipelineSelect.addEventListener('change', (e) => {
-            const isDast = e.target.value === 'web_dast';
-            const isMobile = e.target.value === 'mobile_sast';
-            const targetGroup = document.getElementById('target-select-group');
-            const patternGroup = document.getElementById('include-pattern-group');
-            const mobileControls = document.getElementById('mobile-apk-controls');
-            if (isDast || isMobile) {
-                if (targetGroup) targetGroup.classList.add('hidden');
-                if (patternGroup) patternGroup.classList.add('hidden');
-            } else {
-                if (targetGroup) targetGroup.classList.remove('hidden');
-                if (patternGroup) patternGroup.classList.remove('hidden');
-            }
-            if (mobileControls) mobileControls.classList.toggle('hidden', !isMobile);
-            updatePipelineLabels(isMobile);
-        });
-    }
-
-    document.getElementById('apk-source-select')?.addEventListener('change', (event) => {
+    document.querySelectorAll('.pipeline-option').forEach(option => {
+        option.addEventListener('click', () => selectPipeline(option.dataset.pipeline));
+    });
+    document.getElementById('apk-source-select')?.addEventListener('change', event => {
         const uploadMode = event.target.value === 'upload';
         document.getElementById('target-apk-group')?.classList.toggle('hidden', uploadMode);
         document.getElementById('upload-apk-group')?.classList.toggle('hidden', !uploadMode);
     });
+    selectPipeline('web_sast');
 
     // Attach Tab Switch Handlers
     document.getElementById('tab-confirmed-btn').addEventListener('click', () => setTab('confirmed'));
     document.getElementById('tab-discarded-btn').addEventListener('click', () => setTab('discarded'));
+    document.getElementById('tab-needs-review-btn').addEventListener('click', () => setTab('needs_review'));
     document.getElementById('tab-all-btn').addEventListener('click', () => setTab('all'));
+
+    // Attach Clickable Stat Card Navigation Handlers
+    document.getElementById('card-click-confirmed').addEventListener('click', () => setTab('confirmed'));
+    document.getElementById('card-click-discarded').addEventListener('click', () => setTab('discarded'));
+    document.getElementById('card-click-needs-review').addEventListener('click', () => setTab('needs_review'));
+    document.getElementById('card-click-all').addEventListener('click', () => setTab('all'));
 });
 
 
@@ -80,6 +71,7 @@ async function fetchTargets() {
     }
 }
 
+
 async function fetchMobileApks() {
     const select = document.getElementById('target-apk-select');
     try {
@@ -98,22 +90,41 @@ async function fetchMobileApks() {
             select.appendChild(option);
         });
     } catch (error) {
-        console.error('Failed to fetch target APK files:', error);
-        select.innerHTML = '<option value="">Unable to load target APKs</option>';
+        console.error('Failed to fetch APK targets:', error);
+        select.innerHTML = '<option value="">Unable to load APK targets</option>';
     }
 }
 
-function updatePipelineLabels(isMobile) {
-    const labels = document.querySelectorAll('#pipeline-pathway .step-label');
-    const values = isMobile
-        ? ['MobSF Scan', 'Normalizing', 'APK Evidence', 'AI Assessor (Pass 1)', 'AI Reviewer (Pass 2)', 'Report Generator']
-        : ['Semgrep Scan', 'Normalizing', 'Source Context', 'AI Assessor (Pass 1)', 'AI Reviewer (Pass 2)', 'Report Generator'];
+
+function selectPipeline(pipeline) {
+    document.getElementById('pipeline-select').value = pipeline;
+    document.querySelectorAll('.pipeline-option').forEach(option => {
+        const selected = option.dataset.pipeline === pipeline;
+        option.classList.toggle('active', selected);
+        option.setAttribute('aria-pressed', selected ? 'true' : 'false');
+    });
+    const isDast = pipeline === 'web_dast';
+    const isMobile = pipeline === 'mobile_sast';
+    document.getElementById('target-select-group')?.classList.toggle('hidden', isDast || isMobile);
+    document.getElementById('include-pattern-group')?.classList.toggle('hidden', isDast || isMobile);
+    document.getElementById('mobile-apk-controls')?.classList.toggle('hidden', !isMobile);
+    updatePipelineLabels(pipeline);
+}
+
+
+function updatePipelineLabels(pipeline) {
+    const labels = [...document.querySelectorAll('#pipeline-pathway .step-label')];
+    const values = pipeline === 'mobile_sast'
+        ? ['MobSF Scan', 'Normalization', 'APK Evidence', 'OpenAI Assessor', 'OpenAI Reviewer', 'Mobile Report']
+        : pipeline === 'web_dast'
+            ? ['OWASP ZAP Scan', 'Normalization', 'HTTP Evidence', 'AI Assessor', 'AI Reviewer', 'Web Report']
+            : ['Semgrep Scan', 'Normalization', 'Source Context', 'AI Assessor', 'AI Reviewer', 'Web Report'];
     labels.forEach((label, index) => { label.textContent = values[index]; });
 }
 
 
 /**
- * Handles "Start SAST Scan" button click, connects to SSE stream GET /api/scan/stream.
+ * Handles "Start Scan Pipeline" button click, connects to SSE stream GET /api/scan/stream.
  */
 async function handleScanSubmit() {
     const pipeline = document.getElementById('pipeline-select').value || 'web_sast';
@@ -142,7 +153,7 @@ async function handleScanSubmit() {
     resetPipelineSteps();
 
     scanBtn.disabled = true;
-    scanBtn.innerHTML = '<span>⏳</span><span>Scanning Target...</span>';
+    scanBtn.innerHTML = '<span>Scanning Target...</span>';
 
     if (pipeline === 'mobile_sast') {
         apkSource = document.getElementById('apk-source-select').value;
@@ -158,15 +169,15 @@ async function handleScanSubmit() {
                 restoreScanButton('Choose an APK file first.');
                 return;
             }
-            appendConsoleLog(new Date().toLocaleTimeString(), 'Uploading APK securely to the CCPL backend...', 'info');
+            appendConsoleLog(new Date().toLocaleTimeString(), 'Uploading APK to temporary CCPL storage...', 'info');
             const formData = new FormData();
             formData.append('file', file);
             try {
-                const uploadResponse = await fetch('/api/mobile/apks/upload', { method: 'POST', body: formData });
-                const uploadData = await uploadResponse.json();
-                if (!uploadResponse.ok) throw new Error(uploadData.detail || `Upload failed: HTTP ${uploadResponse.status}`);
-                apkReference = uploadData.token;
-                appendConsoleLog(new Date().toLocaleTimeString(), `APK uploaded: ${uploadData.filename}`, 'success');
+                const response = await fetch('/api/mobile/apks/upload', { method: 'POST', body: formData });
+                const payload = await response.json();
+                if (!response.ok) throw new Error(payload.detail || `Upload failed: HTTP ${response.status}`);
+                apkReference = payload.token;
+                appendConsoleLog(new Date().toLocaleTimeString(), `APK accepted: ${payload.filename}`, 'success');
             } catch (error) {
                 restoreScanButton(error.message);
                 return;
@@ -175,7 +186,12 @@ async function handleScanSubmit() {
     }
 
     // Build SSE URL
-    const params = new URLSearchParams({ target_name: targetName, max_findings: scanMode, include_pattern: includePattern, pipeline });
+    const params = new URLSearchParams({
+        target_name: targetName,
+        max_findings: scanMode,
+        include_pattern: includePattern,
+        pipeline,
+    });
     if (pipeline === 'mobile_sast') {
         params.set('apk_source', apkSource);
         params.set('apk_reference', apkReference);
@@ -193,7 +209,7 @@ async function handleScanSubmit() {
             eventSource.close();
             spinnerGroup.classList.add('hidden');
             scanBtn.disabled = false;
-            scanBtn.innerHTML = '<span>⚡</span><span>Start Scan Pipeline</span>';
+            scanBtn.innerHTML = '<span>Start Scan Pipeline</span>';
             updatePipelineStep('done');
             
             currentScanData = data;
@@ -202,8 +218,8 @@ async function handleScanSubmit() {
             eventSource.close();
             spinnerGroup.classList.add('hidden');
             scanBtn.disabled = false;
-            scanBtn.innerHTML = '<span>⚡</span><span>Start Scan Pipeline</span>';
-            appendConsoleLog(new Date().toLocaleTimeString(), `❌ ${data.message}`, 'error');
+            scanBtn.innerHTML = '<span>Start Scan Pipeline</span>';
+            appendConsoleLog(new Date().toLocaleTimeString(), `Error: ${data.message}`, 'error');
         }
     };
 
@@ -212,17 +228,18 @@ async function handleScanSubmit() {
         eventSource.close();
         spinnerGroup.classList.add('hidden');
         scanBtn.disabled = false;
-        scanBtn.innerHTML = '<span>⚡</span><span>Start SAST Scan</span>';
-        appendConsoleLog(new Date().toLocaleTimeString(), '❌ Connection to scan pipeline stream lost.', 'error');
+        scanBtn.innerHTML = '<span>Start Scan Pipeline</span>';
+        appendConsoleLog(new Date().toLocaleTimeString(), 'Connection to scan pipeline stream lost.', 'error');
     };
 }
 
-function restoreScanButton(errorMessage) {
+
+function restoreScanButton(message) {
     document.getElementById('spinner-container')?.classList.add('hidden');
     const button = document.getElementById('scan-btn');
     button.disabled = false;
-    button.innerHTML = '<span>⚡</span><span>Start Scan Pipeline</span>';
-    appendConsoleLog(new Date().toLocaleTimeString(), `❌ ${errorMessage}`, 'error');
+    button.innerHTML = '<span>Start Scan Pipeline</span>';
+    appendConsoleLog(new Date().toLocaleTimeString(), `Error: ${message}`, 'error');
 }
 
 
@@ -234,12 +251,12 @@ function appendConsoleLog(timestamp, message, level = 'info') {
     const line = document.createElement('div');
     line.className = `console-line ${level}`;
 
-    const isSuccess = message.startsWith('✅') || message.startsWith('🚀');
+    const isSuccess = message.startsWith('Step ') || message.startsWith('Starting ');
     if (isSuccess) line.className += ' success';
 
-    let formattedMsg = message.replace(/(\[Step \d\/6\])/g, '<span class="tag">$1</span>');
+    let formattedMsg = escapeHtml(String(message)).replace(/(\[Step \d\/6\])/g, '<span class="tag">$1</span>');
 
-    line.innerHTML = `<span class="ts">[${timestamp}]</span> ${formattedMsg}`;
+    line.innerHTML = `<span class="ts">[${escapeHtml(String(timestamp))}]</span> ${formattedMsg}`;
     consoleOutput.appendChild(line);
     consoleOutput.scrollTop = consoleOutput.scrollHeight;
 }
@@ -285,19 +302,28 @@ function updatePipelineStep(activeStep) {
  * Renders summary metrics, tab counters, and shows findings for active tab.
  */
 function renderDashboard(data) {
-    const total = data.total_evaluated || 0;
-    const confirmed = data.confirmed_vulnerabilities || 0;
-    const discarded = data.discarded_false_positives || 0;
+    const allFindings = data.reviewed_findings || [];
+    const total = data.total_evaluated || allFindings.length;
+
+    const confirmed = data.confirmed_vulnerabilities ?? allFindings.filter(f => findingDecision(f) === 'confirmed').length;
+    const discarded = data.rejected_false_positives ?? allFindings.filter(f => findingDecision(f) === 'rejected').length;
+    const needsReview = data.requires_manual_verification ?? (total - confirmed - discarded);
 
     // Update metric numbers
     document.getElementById('stat-total').textContent = total;
     document.getElementById('stat-confirmed').textContent = confirmed;
     document.getElementById('stat-discarded').textContent = discarded;
+    document.getElementById('stat-needs-review').textContent = needsReview;
 
     // Update Tab Counts
     document.getElementById('tab-confirmed-count').textContent = confirmed;
     document.getElementById('tab-discarded-count').textContent = discarded;
+    document.getElementById('tab-needs-review-count').textContent = needsReview;
     document.getElementById('tab-all-count').textContent = total;
+
+    const mobileReport = data.pipeline === 'mobile_sast';
+    document.getElementById('download-html-btn').href = mobileReport ? '/api/reports/mobile/html' : '/api/reports/html';
+    document.getElementById('download-md-btn').href = mobileReport ? '/api/reports/mobile/md' : '/api/reports/md';
 
     // Show Report Actions & Filter Tabs
     document.getElementById('report-actions').classList.remove('hidden');
@@ -308,13 +334,14 @@ function renderDashboard(data) {
 
 
 /**
- * Sets active tab ('confirmed', 'discarded', 'all') and re-renders findings.
+ * Sets active tab ('confirmed', 'discarded', 'needs_review', 'all') and re-renders findings.
  */
 function setTab(tabName) {
     activeTab = tabName;
     
     document.querySelectorAll('.tab-btn').forEach(btn => btn.classList.remove('active'));
-    document.getElementById(`tab-${tabName}-btn`).classList.add('active');
+    const btn = document.getElementById(`tab-${tabName}-btn`);
+    if (btn) btn.classList.add('active');
 
     renderActiveTabFindings();
 }
@@ -334,13 +361,16 @@ function renderActiveTabFindings() {
     let filtered = [];
     if (activeTab === 'confirmed') {
         filtered = allFindings.filter(f => {
-            const dec = f.llm_review?.decision || (f.llm_assessment?.is_plausible ? 'confirmed' : 'rejected');
-            return dec === 'confirmed';
+            return findingDecision(f) === 'confirmed';
         });
     } else if (activeTab === 'discarded') {
         filtered = allFindings.filter(f => {
-            const dec = f.llm_review?.decision || (f.llm_assessment?.is_plausible ? 'confirmed' : 'rejected');
-            return dec !== 'confirmed';
+            const decision = findingDecision(f);
+            return decision === 'rejected' || decision === 'discarded';
+        });
+    } else if (activeTab === 'needs_review') {
+        filtered = allFindings.filter(f => {
+            return findingDecision(f) === 'needs_review';
         });
     } else {
         filtered = allFindings;
@@ -349,7 +379,7 @@ function renderActiveTabFindings() {
     if (filtered.length === 0) {
         container.innerHTML = `
             <div class="card empty-state">
-                <h3>No findings in this section (${activeTab.toUpperCase()}).</h3>
+                <h3>No findings in this section (${activeTab.toUpperCase().replace('_', ' ')}).</h3>
             </div>
         `;
         return;
@@ -359,28 +389,44 @@ function renderActiveTabFindings() {
         const review = f.llm_review || {};
         const assessment = f.llm_assessment || {};
 
-        const decision = review.decision || (assessment.is_plausible ? 'confirmed' : 'rejected');
+        const decision = findingDecision(f);
         const isConfirmed = decision === 'confirmed';
+        const isNeedsReview = decision === 'needs_review';
 
         const sev = (review.final_severity || assessment.severity || f.scanner_severity || 'LOW').toUpperCase();
-        const badgeClass = isConfirmed ? 'badge-high' : 'badge-low';
-        const badgeLabel = isConfirmed ? `CONFIRMED [${sev}]` : `DISCARDED FALSE POSITIVE`;
 
-        const reason = review.review_reason || assessment.reasoning || 'No explanation provided.';
-        const remediation = assessment.remediation || 'No remediation snippet available.';
+        let badgeClass = 'badge-low';
+        let badgeLabel = 'FALSE POSITIVE';
+        if (isConfirmed) {
+            badgeClass = 'badge-high';
+            badgeLabel = `CONFIRMED [${sev}]`;
+        } else if (isNeedsReview) {
+            badgeClass = 'badge-medium';
+            badgeLabel = `REQUIRES VERIFICATION [${sev}]`;
+        }
 
-        // Dual SAST/DAST location handling
-        const isDast = !!f.target;
-        const locationHtml = isDast 
-            ? `<strong>Target URL:</strong> <code>${f.target}</code> | <strong>Rule:</strong> <code>${f.rule_id}</code>`
-            : `<strong>File:</strong> <code>${f.file_path}</code> (Lines ${f.start_line}-${f.end_line}) | <strong>Rule:</strong> <code>${f.rule_id}</code>`;
+        const reason = escapeHtml(review.review_reason || assessment.reasoning || 'No explanation provided.');
+        const remediation = escapeHtml(assessment.remediation || 'No remediation snippet available.');
+        const ruleId = escapeHtml(f.rule_id || 'UNKNOWN');
+
+        // Domain-aware SAST/DAST/mobile location handling
+        const isMobile = f.scan_type === 'mobile_sast' || f.tool === 'MobSF';
+        const isDast = !isMobile && !!(f.affected_url || (f.scan_type || '').includes('dast'));
+        const locationHtml = isMobile
+            ? `<strong>APK location:</strong> <code>${escapeHtml(f.location || f.file_path || f.target || 'Unknown')}</code> | <strong>MobSF rule:</strong> <code>${ruleId}</code>`
+            : isDast
+            ? `<strong>Target URL:</strong> <code>${escapeHtml(f.affected_url || f.target || 'Unknown')}</code> | <strong>Rule:</strong> <code>${ruleId}</code>`
+            : `<strong>File:</strong> <code>${escapeHtml(f.file_path || 'Unknown')}</code> (Lines ${escapeHtml(String(f.start_line ?? '?'))}-${escapeHtml(String(f.end_line ?? '?'))}) | <strong>Rule:</strong> <code>${ruleId}</code>`;
             
-        const contextLabel = isDast ? '📄 Live HTTP Evidence Context:' : '📄 Source Code Context:';
-        const contextData = f.evidence_context || f.code_context || 'No context snippet available.';
+        const contextLabel = isMobile ? 'APK Static Evidence Context:' : (isDast ? 'Live HTTP Evidence Context:' : 'Source Code Context:');
+        const contextData = escapeHtml(f.evidence_context || f.code_context || 'No context snippet available.');
+        const findingTitle = escapeHtml(`${f.finding_id || 'UNKNOWN'}: ${f.title || f.vulnerability_type || 'Security finding'}`);
 
         const card = document.createElement('div');
         card.className = 'finding-card';
-        if (!isConfirmed) {
+        if (isNeedsReview) {
+            card.style.borderLeft = '4px solid var(--accent-yellow)';
+        } else if (!isConfirmed) {
             card.style.borderLeft = '4px solid var(--accent-green-text)';
         }
 
@@ -388,20 +434,20 @@ function renderActiveTabFindings() {
             <div class="finding-header">
                 <div>
                     <span class="badge ${badgeClass}">${badgeLabel}</span>
-                    <strong style="margin-left: 0.5rem; font-size: 1.1rem;">${f.finding_id}: ${f.title || f.vulnerability_type}</strong>
+                    <strong style="margin-left: 0.5rem; font-size: 1.1rem;">${findingTitle}</strong>
                 </div>
             </div>
             <p style="color: var(--text-muted); font-size: 0.88rem; margin-top: 0.4rem;">
                 ${locationHtml}
             </p>
 
-            <div class="reasoning-box" style="${!isConfirmed ? 'background: var(--accent-green-bg); border-left-color: var(--accent-green-text); color: var(--accent-green-text);' : ''}">
-                <strong>🤖 AI Security Reasoning:</strong>
+            <div class="reasoning-box" style="${isNeedsReview ? 'background: rgba(234, 179, 8, 0.1); border-left-color: var(--accent-yellow); color: var(--accent-yellow);' : (!isConfirmed ? 'background: var(--accent-green-bg); border-left-color: var(--accent-green-text); color: var(--accent-green-text);' : '')}">
+                <strong>AI Security Reasoning:</strong>
                 <p style="margin-top: 0.4rem;">${reason}</p>
             </div>
 
             ${isConfirmed ? `
-                <strong>🛠️ Remediation Recommendation:</strong>
+                <strong>Remediation Recommendation:</strong>
                 <pre><code>${remediation}</code></pre>
             ` : ''}
 
@@ -411,4 +457,21 @@ function renderActiveTabFindings() {
 
         container.appendChild(card);
     });
+}
+
+
+function escapeHtml(value) {
+    return String(value).replace(/[&<>'"]/g, character => ({
+        '&': '&amp;', '<': '&lt;', '>': '&gt;', "'": '&#39;', '"': '&quot;',
+    })[character]);
+}
+
+
+function findingDecision(finding) {
+    const review = finding.llm_review || {};
+    if (review.decision) return review.decision;
+    if (review.llm_status === 'error') return 'needs_review';
+    const assessment = finding.llm_assessment || {};
+    if (assessment.llm_status === 'error') return 'needs_review';
+    return assessment.is_plausible === true ? 'confirmed' : 'needs_review';
 }

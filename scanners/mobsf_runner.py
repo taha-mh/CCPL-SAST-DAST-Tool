@@ -36,6 +36,7 @@ def run_static_scan(
     api_key: str,
     timeout_seconds: float = 900.0,
     force_rescan: bool = False,
+    source_output_path: Path | None = None,
     transport: httpx.BaseTransport | None = None,
 ) -> dict[str, Any]:
     """Upload and statically scan one APK through the MobSF REST API."""
@@ -86,9 +87,42 @@ def run_static_scan(
     if not isinstance(report, dict):
         raise ValueError("MobSF report JSON must be an object")
 
+    source_records: dict[str, Any] = {}
+    if source_output_path is not None:
+        code_findings = (report.get("code_analysis") or {}).get("findings") or {}
+        source_files = sorted({
+            str(file_path)
+            for finding in code_findings.values()
+            if isinstance(finding, dict)
+            for file_path in (finding.get("files") or {})
+        })
+        with httpx.Client(
+            base_url=base_url.rstrip("/"),
+            headers=headers,
+            timeout=timeout_seconds,
+            follow_redirects=True,
+            transport=transport,
+        ) as client:
+            for file_path in source_files:
+                source_response = _post(
+                    client,
+                    "/api/v1/view_source",
+                    data={"file": file_path, "type": "apk", "hash": upload["hash"]},
+                )
+                source_payload = source_response.json()
+                if not isinstance(source_payload, dict) or not isinstance(source_payload.get("data"), str):
+                    raise ValueError(f"MobSF source response was invalid for {file_path}")
+                source_records[file_path] = source_payload
+
     output_path.parent.mkdir(parents=True, exist_ok=True)
     log_path.parent.mkdir(parents=True, exist_ok=True)
     output_path.write_bytes(report_response.content)
+    if source_output_path is not None:
+        source_output_path.parent.mkdir(parents=True, exist_ok=True)
+        source_output_path.write_text(
+            json.dumps(source_records, indent=2, ensure_ascii=False) + "\n",
+            encoding="utf-8",
+        )
 
     audit = {
         "scanner": "MobSF",
@@ -107,6 +141,8 @@ def run_static_scan(
         "raw_report_path": str(output_path.resolve()),
         "raw_report_sha256": hashlib.sha256(report_response.content).hexdigest(),
         "raw_json_valid": True,
+        "source_evidence_files": len(source_records),
+        "source_evidence_path": str(source_output_path.resolve()) if source_output_path else None,
         "api_key_recorded": False,
     }
     log_path.write_text(json.dumps(audit, indent=2) + "\n", encoding="utf-8")
@@ -121,6 +157,7 @@ def main() -> int:
     parser.add_argument("--url", default=os.getenv("MOBSF_URL", DEFAULT_URL))
     parser.add_argument("--timeout", type=float, default=900.0)
     parser.add_argument("--force-rescan", action="store_true")
+    parser.add_argument("--sources", type=Path, default=Path("data/raw/mobsf_sources.json"))
     args = parser.parse_args()
 
     try:
@@ -132,6 +169,7 @@ def main() -> int:
             api_key=os.getenv("MOBSF_API_KEY", ""),
             timeout_seconds=args.timeout,
             force_rescan=args.force_rescan,
+            source_output_path=args.sources,
         )
     except (OSError, ValueError, httpx.HTTPError) as exc:
         print(f"MobSF static scan failed: {exc}", file=sys.stderr)

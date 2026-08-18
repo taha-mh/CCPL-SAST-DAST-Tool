@@ -1,0 +1,174 @@
+================================================================================
+           CCPL HYBRID SAST & DAST SECURITY ANALYSIS TOOL
+                     PHASE-WISE DOCUMENTATION
+================================================================================
+
+PROJECT TITLE    : CCPL Web SAST & DAST Automated AI Security Testing Tool
+AUTHOR           : Muhammad Saqib
+TEAM LEAD        : Muhammad Amir
+DATE             : August 2026
+REPOSITORY       : CCPL-SAST-DAST-Tool
+
+--------------------------------------------------------------------------------
+1. EXECUTIVE SUMMARY & ARCHITECTURAL OVERVIEW
+--------------------------------------------------------------------------------
+The CCPL Security Tool is a hybrid Application Security Testing platform that
+combines Static Application Security Testing (SAST) and Dynamic Application
+Security Testing (DAST) with a Dual-Pass Artificial Intelligence (AI) Audit Engine.
+
+The system automates vulnerability discovery, normalizes raw scanner outputs,
+enforces non-manufactured evidence context, eliminates false positives via a
+two-stage AI review process, and generates production-ready HTML/Markdown 
+security reports.
+
+================================================================================
+2. PHASE 1: SAST PIPELINE DEVELOPMENT (Static Code Security Audit)
+================================================================================
+Objective:
+Build an automated static code analysis pipeline capable of scanning target 
+source code repositories, normalizing raw scanner findings, and enriching each 
+finding with surrounding source code context for AI evaluation.
+
+Key Components & Deliverables:
+1. Semgrep Scanner Wrapper (`scanners/semgrep_runner.py`):
+   - Executes Semgrep static scanner against target codebase (e.g. PHP/JS).
+   - Generates raw findings JSON (`data/raw/semgrep_findings.json`).
+
+2. Semgrep Normalizer (`parsers/semgrep_normalizer.py`):
+   - Transforms raw Semgrep rules into a standardized schema (`finding_id`, 
+     `vulnerability_type`, `file_path`, `start_line`, `end_line`, `code_snippet`).
+   - Saves clean output to `data/normalized/normalized_findings.json`.
+
+3. Source Code Context Extractor (`parsers/source_context.py`):
+   - Reads referenced source files from disk.
+   - Extracts a ±10 line surrounding code window around detected vulnerabilities.
+   - Attaches `code_context` to `data/normalized/findings_with_context.json`.
+
+================================================================================
+3. PHASE 2: DAST PIPELINE & NON-MANUFACTURED EVIDENCE INTEGRITY
+================================================================================
+Objective:
+Implement Dynamic Application Security Testing (DAST) workflow using OWASP ZAP, 
+fetching live HTTP request/response evidence and enforcing strict evidence 
+integrity rules to prevent AI hallucination.
+
+Key Components & Deliverables:
+1. OWASP ZAP Integration (`scanners/dast_runner.py`):
+   - Executes ZAP Spider and Authenticated Active Scanner against target web apps 
+     (e.g., DVWA target running on port 8085).
+   - Captures 210 raw dynamic vulnerability findings (`data/raw/dast_findings.json`).
+
+2. DAST Evidence Normalizer (`parsers/dast_normalizer.py`):
+   - Reliable `scan_type` Classification: Distinguishes passive scanning 
+     (`sourceid` 1/2) from active injection scanning (`sourceid` 3 / payload).
+   - Response Header vs. Parameter Separation: Correctly maps missing security 
+     headers (e.g. `X-Content-Type-Options`) to `tested_header` while setting 
+     `parameter: "N/A"`.
+   - Non-Manufactured Evidence Integrity: Strictly separates OBSERVED HTTP EVIDENCE 
+     (actual captured payloads and response matches) from SCANNER DESCRIPTION text. 
+     If response evidence was not captured, explicitly records: 
+     "Information not available in captured response evidence."
+   - Output saved to `data/normalized/dast_normalized.json`.
+
+================================================================================
+4. PHASE 3: DUAL-PASS AI ENGINE & OPENAI PROVIDER MIGRATION
+================================================================================
+Objective:
+Design a two-pass AI audit engine to eliminate false positives and migrate from 
+local CPU inference (Ollama) to OpenAI API for production-grade speed and accuracy.
+
+Dual-Pass AI Architecture:
+1. Pass 1: AI Assessor (`llm/assessor.py`):
+   - Evaluates finding context against security rules.
+   - Determines initial vulnerability plausibility (`is_plausible`), impact, 
+     and concrete remediation recommendations.
+
+2. Pass 2: AI Reviewer / Chief Security Officer (`llm/reviewer.py`):
+   - Independent 2nd-pass audit of Pass 1 assessor output.
+   - Assigns final security verdict: `confirmed` risk, `rejected` false positive, 
+     or `needs_review`.
+
+Migration to OpenAI API (`llm/provider.py`):
+- Hardware Limitation Identified: Running local 9.7B parameter reasoning model 
+  (`qwen3.5:9b`) on 8 vCPU VM without GPU took >10 minutes per finding due to 
+  internal thinking token generation.
+- Central Provider Module (`llm/provider.py`): Built a clean, reusable 60-line 
+  OpenAI API provider using standard `requests` library.
+- Native JSON Mode: Utilizes OpenAI `"response_format": {"type": "json_object"}` 
+  guaranteeing 100% structured JSON output without markdown backticks or preambles.
+- Performance Benchmark: Audit latency reduced from **600+ seconds to ~1.5 seconds 
+  per finding** (Full scan reduced from 35+ hours to ~3 minutes).
+- Confidential Key Security: API Key stored securely in `.env` file (Git-ignored).
+- Cleanup: Removed obsolete Ollama configurations (`requests`, `OLLAMA_API_URL`) 
+  from `assessor.py` and `reviewer.py` for a clean DRY codebase.
+
+System Error Isolation Rule:
+- System timeouts or API failures return `llm_status: "error"`.
+- Reviewer automatically flags system errors as `needs_review`. System failures 
+  are NEVER falsely represented as `is_plausible: false`.
+
+================================================================================
+5. PHASE 4: FASTAPI BACKEND & SSE REAL-TIME EVENT STREAMING
+================================================================================
+Objective:
+Expose hybrid SAST and DAST pipelines via FastAPI REST API endpoints with real-time 
+Server-Sent Events (SSE) streaming for live UI progress monitoring.
+
+Key Components & Endpoints (`main.py`):
+1. `GET /api/scan/dast/stream`:
+   - Streams real-time timestamped pipeline logs to frontend via SSE.
+   - Executes 4-step DAST pipeline asynchronously using `asyncio.to_thread()` 
+     to prevent blocking the web server event loop.
+   - Sends keep-alive signals during AI processing.
+
+2. `GET /api/findings/dast`:
+   - Returns JSON list of latest reviewed DAST findings (`dast_reviewed.json`).
+
+3. `GET /api/reports/dast/html` & `GET /api/reports/dast/md`:
+   - Downloads/serves generated standalone DAST HTML and Markdown reports.
+
+================================================================================
+6. PHASE 5: STANDALONE REPORT GENERATOR & SUMMARY METRICS
+================================================================================
+Objective:
+Transform AI-reviewed security findings into professional HTML and Markdown 
+reports suitable for executive and technical review.
+
+Key Components & Deliverables (`reports/report_generator.py`):
+- HTML Report (`reports/dast_report.html`): Includes CSS styling, executive risk 
+  metrics, confirmed vulnerability tables, and remediation steps.
+- Markdown Report (`reports/dast_report.md`): Formatted for developer documentation.
+
+================================================================================
+7. SUMMARY OF PIPELINE FILE STRUCTURE
+================================================================================
+CCPL-SAST-DAST-Tool/
+│
+├── .env                        # Confidential OpenAI API Key & Model Config
+├── .gitignore                  # Git ignore rules (protecting .env & notes)
+├── main.py                     # FastAPI REST API & SSE Real-time Streaming Server
+│
+├── scanners/
+│   ├── semgrep_runner.py       # Semgrep SAST Scanner Wrapper
+│   └── dast_runner.py          # OWASP ZAP DAST Scanner Wrapper
+│
+├── parsers/
+│   ├── semgrep_normalizer.py   # SAST Finding Schema Normalizer
+│   ├── source_context.py       # SAST Source Code Window Extractor
+│   └── dast_normalizer.py      # DAST Non-Manufactured Evidence Normalizer
+│
+├── llm/
+│   ├── provider.py             # Central OpenAI API Provider Module
+│   ├── assessor.py             # Pass 1 AI Vulnerability Assessor
+│   └── reviewer.py             # Pass 2 AI Senior Reviewer Audit
+│
+├── prompts/
+│   ├── assessor_prompt.py      # Pass 1 AI Assessor System & User Prompts
+│   └── prompts/reviewer_prompt.py # Pass 2 AI Reviewer System & User Prompts
+│
+└── reports/
+    └── report_generator.py     # Standalone HTML & Markdown Security Report Engine
+
+================================================================================
+                                END OF DOCUMENTATION
+================================================================================

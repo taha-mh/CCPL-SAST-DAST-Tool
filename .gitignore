@@ -37,6 +37,8 @@ models/
 *.pt
 *.pth
 *.ckpt
+.geminiignore
+.aiexclude
 
 # Fixed vulnerable target source
 targets/DVWA/
@@ -75,6 +77,8 @@ logs/
 
 # Local project notes
 PROJECT_NOTES.md
+DEBUGGING_NOTES.md
+*.notes.md
 docs/PROJECT_NOTES.md
 
 # IDE and editor files

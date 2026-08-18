@@ -1,14 +1,15 @@
 """
-Report Generator Module for CCPL Web SAST Tool.
+Refactored Report Generator Module for CCPL Web SAST & DAST Security Tool.
 
 Responsibility:
-1. Load reviewed findings from data/normalized/reviewed_findings.json.
-2. Separate confirmed findings from discarded/rejected false positives.
-3. Calculate summary statistics (severity counts, plausible totals).
-4. Generate professional Markdown report (reports/sast_report.md).
-5. Generate modern HTML report dashboard (reports/sast_report.html).
+1. Load reviewed findings from JSON.
+2. Filter confirmed vulnerabilities using strict Reviewer verdict rules.
+3. Dynamically detect LLM Provider/Model and finding type (SAST vs DAST).
+4. Separate HTML presentation into reports/report_template.html.
+5. Generate both Markdown and HTML security assessment reports.
 """
 
+import base64
 import json
 import logging
 from datetime import datetime
@@ -19,115 +20,216 @@ logging.basicConfig(level=logging.INFO, format="[%(asctime)s] %(levelname)s: %(m
 logger = logging.getLogger(__name__)
 
 
-def generate_markdown_report(reviewed_findings: list, output_md_path: str = "reports/sast_report.md") -> str:
-    """
-    Generates a structured Markdown security report from reviewed findings.
+def get_finding_type(finding: dict) -> str:
+    """Detects whether a finding is DAST or SAST based on present fields."""
+    if finding.get("target") or finding.get("scan_type") or finding.get("tested_header"):
+        return "DAST"
+    return "SAST"
 
-    :param reviewed_findings: List of finding dictionaries with llm_assessment & llm_review.
-    :param output_md_path: Path to save the Markdown report file.
-    :return: Generated Markdown string.
+
+def get_review_verdict(finding: dict) -> str:
     """
-    confirmed = [
-        f for f in reviewed_findings
-        if f.get("llm_review", {}).get("decision") == "confirmed"
-        or (not f.get("llm_review", {}).get("decision") and f.get("llm_assessment", {}).get("is_plausible") is True)
-    ]
-    discarded = [f for f in reviewed_findings if f not in confirmed]
+    Returns the strict Reviewer decision.
+    Only returns 'confirmed' if the Reviewer explicitly confirmed the finding.
+    """
+    review = finding.get("llm_review", {})
+    decision = review.get("decision")
+    if decision == "confirmed":
+        return "confirmed"
+    elif decision in ("rejected", "discarded"):
+        return "rejected"
+    elif decision == "needs_review":
+        return "needs_review"
+    return "not_reviewed"
+
+
+def get_final_severity(finding: dict) -> str:
+    """Resolves severity hierarchy: llm_review -> llm_assessment -> scanner_severity."""
+    review = finding.get("llm_review", {})
+    assessment = finding.get("llm_assessment", {})
+    sev = (
+        review.get("final_severity")
+        or assessment.get("severity")
+        or finding.get("scanner_severity")
+        or finding.get("scanner_risk")
+        or "LOW"
+    )
+    return str(sev).upper()
+
+
+def get_location_info(finding: dict) -> dict:
+    """Returns location details formatted for SAST (file/lines) vs DAST (URL/Method)."""
+    f_type = get_finding_type(finding)
+    if f_type == "DAST":
+        target_url = finding.get("target", "N/A")
+        http_method = finding.get("http_method", "GET")
+        return {
+            "type": "DAST",
+            "display_text": f"Target URL: `{target_url}`",
+            "html_display": f"<code>{http_method} {target_url}</code>",
+            "context_label": "Live HTTP Evidence Context:",
+            "context_data": finding.get("evidence_context", "No HTTP evidence context available."),
+        }
+    else:
+        file_path = finding.get("file_path", "Unknown File")
+        start_line = finding.get("start_line", 0)
+        end_line = finding.get("end_line", 0)
+        lines_str = f"{start_line}-{end_line}" if start_line != end_line else str(start_line)
+        return {
+            "type": "SAST",
+            "display_text": f"`{file_path}` (Lines {lines_str})",
+            "html_display": f"<code>{Path(file_path).name}:{lines_str}</code>",
+            "context_label": "Source Code Context:",
+            "context_data": finding.get("code_context", "No source code context available."),
+        }
+
+
+def get_llm_engine_info(findings: list) -> str:
+    """Dynamically detects the LLM Provider and Model from processed findings."""
+    for f in findings:
+        model = f.get("llm_review", {}).get("llm_model") or f.get("llm_assessment", {}).get("llm_model")
+        if model:
+            model_str = str(model)
+            model_lower = model_str.lower()
+            if "gpt" in model_lower:
+                return f"OpenAI ({model_str})"
+            elif "qwen" in model_lower or "ollama" in model_lower:
+                return f"Local Ollama ({model_str})"
+            return f"AI Engine ({model_str})"
+    return "AI Reasoning Engine"
+
+
+def get_report_meta(findings: list) -> dict:
+    """Determines report title, target system info, and LLM engine dynamically."""
+    dast_count = sum(1 for f in findings if get_finding_type(f) == "DAST")
+    sast_count = len(findings) - dast_count
+
+    if dast_count > 0 and sast_count == 0:
+        title = "CCPL DAST Security Assessment Report"
+        first_target = next((f.get("target") for f in findings if f.get("target")), "DVWA Application")
+        target_system = f"DVWA Live Application (`{first_target}`)"
+    elif sast_count > 0 and dast_count == 0:
+        title = "CCPL SAST Security Assessment Report"
+        target_system = "DVWA Source Code (`targets/DVWA`)"
+    else:
+        title = "CCPL Hybrid Security Assessment Report"
+        target_system = "DVWA Web Application & Source Code"
+
+    return {
+        "title": title,
+        "target_system": target_system,
+        "llm_engine": get_llm_engine_info(findings),
+    }
+
+
+def generate_markdown_report(reviewed_findings: list, output_md_path: str = "reports/sast_report.md") -> str:
+    """Generates a clean, structured Markdown security report from reviewed findings."""
+    meta = get_report_meta(reviewed_findings)
+
+    # 3-State Verdict Separation
+    confirmed = [f for f in reviewed_findings if get_review_verdict(f) == "confirmed"]
+    rejected = [f for f in reviewed_findings if get_review_verdict(f) == "rejected"]
+    needs_review = [f for f in reviewed_findings if f not in confirmed and f not in rejected]
 
     # Calculate severity counts for confirmed findings
     severity_counts = {"CRITICAL": 0, "HIGH": 0, "MEDIUM": 0, "LOW": 0, "INFO": 0}
     for f in confirmed:
-        sev = f.get("llm_review", {}).get("final_severity") or f.get("llm_assessment", {}).get("severity") or f.get("scanner_severity", "LOW")
-        sev = sev.upper()
+        sev = get_final_severity(f)
         if sev in severity_counts:
             severity_counts[sev] += 1
         else:
             severity_counts["LOW"] += 1
 
-    md_lines = []
-    md_lines.append("# 🛡️ CCPL Web SAST Security Assessment Report")
-    md_lines.append("")
-    md_lines.append(f"**Generated On:** {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}")
-    md_lines.append(f"**Target System:** DVWA Source Code (`targets/DVWA`)")
-    md_lines.append(f"**Scanner Engine:** Semgrep + Ollama (`qwen3.5:9b`)")
-    md_lines.append("")
-    md_lines.append("---")
-    md_lines.append("")
-    md_lines.append("## 📊 Executive Summary")
-    md_lines.append("")
-    md_lines.append(f"- **Total Candidate Findings Evaluated:** {len(reviewed_findings)}")
-    md_lines.append(f"- **Confirmed Vulnerabilities:** {len(confirmed)}")
-    md_lines.append(f"- **Discarded False Positives:** {len(discarded)}")
-    md_lines.append("")
-    md_lines.append("| Severity | Count |")
-    md_lines.append("|---|---|")
+    md_lines = [
+        f"# {meta['title']}",
+        "",
+        f"**Generated On:** {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}",
+        f"**Target System:** {meta['target_system']}",
+        f"**LLM Engine:** {meta['llm_engine']}",
+        "",
+        "---",
+        "",
+        "## Executive Summary",
+        "",
+        f"- **Total Candidate Findings Evaluated:** {len(reviewed_findings)}",
+        f"- **Confirmed Vulnerabilities:** {len(confirmed)}",
+        f"- **Rejected False Positives:** {len(rejected)}",
+        f"- **Requires Manual Verification:** {len(needs_review)}",
+        "",
+        "| Severity | Count |",
+        "|---|---|",
+    ]
     for sev, count in severity_counts.items():
         md_lines.append(f"| **{sev}** | {count} |")
-    md_lines.append("")
-    md_lines.append("---")
-    md_lines.append("")
-    md_lines.append("## 🚨 Confirmed Security Vulnerabilities")
-    md_lines.append("")
+
+    md_lines.extend(["", "---", "", "## Confirmed Security Vulnerabilities", ""])
 
     if not confirmed:
         md_lines.append("*No confirmed vulnerabilities detected in the evaluated sample.*")
     else:
         for f in confirmed:
             f_id = f.get("finding_id", "UNKNOWN")
-            title = f.get("title", "Security Issue")
+            title = f.get("title") or f.get("vulnerability_type") or "Security Issue"
+            rule_id = f.get("rule_id", "unknown_rule")
+            sev = get_final_severity(f)
+
             review = f.get("llm_review", {})
             assessment = f.get("llm_assessment", {})
-
-            sev = review.get("final_severity") or assessment.get("severity") or f.get("scanner_severity")
-            rule_id = f.get("rule_id", "unknown_rule")
             reasoning = review.get("review_reason") or assessment.get("reasoning", "No explanation available.")
-            remediation = assessment.get("remediation", "No remediation snippet available.")
+            remediation = assessment.get("remediation", "No remediation recommendation available.")
 
-            # Dual SAST/DAST location handling
-            target_url = f.get("target")
-            if target_url:
-                location_str = f"Target URL: `{target_url}`"
-            else:
-                lines_str = f"{f.get('start_line')}-{f.get('end_line')}"
-                location_str = f"`{f.get('file_path', '')}` (Lines {lines_str})"
+            loc = get_location_info(f)
 
             md_lines.append(f"### [{sev}] {f_id}: {title}")
             md_lines.append(f"- **Rule ID:** `{rule_id}`")
-            md_lines.append(f"- **Affected Location:** {location_str}")
+            md_lines.append(f"- **Location:** {loc['display_text']}")
             md_lines.append(f"- **AI Review Verdict:** `{review.get('decision', 'confirmed').upper()}` (Confidence: `{review.get('confidence', 'HIGH')}`)")
             md_lines.append("")
-            md_lines.append(f"**Analysis & Evidence:**")
+            md_lines.append("**Analysis & Evidence:**")
             md_lines.append(f"> {reasoning}")
             md_lines.append("")
-            md_lines.append(f"**Recommended Developer Remediation:**")
+            md_lines.append("**Recommended Developer Remediation:**")
             md_lines.append(f"```text\n{remediation}\n```")
             md_lines.append("")
-            context_label = "#### Live HTTP Evidence Context" if target_url else "#### Code Context"
-            md_lines.append(context_label)
+            md_lines.append(f"#### {loc['context_label']}")
             md_lines.append("```text")
-            md_lines.append(f.get("evidence_context") or f.get("code_context", "No context snippet available."))
+            md_lines.append(loc["context_data"])
             md_lines.append("```")
             md_lines.append("")
             md_lines.append("---")
             md_lines.append("")
 
-    md_lines.append("## 📁 Appendix: Discarded False Positives")
-    md_lines.append("")
-    if not discarded:
-        md_lines.append("*No findings were discarded during this evaluation.*")
+    md_lines.extend(["## Appendix: Rejected False Positives", ""])
+    if not rejected:
+        md_lines.append("*No findings were rejected during this evaluation.*")
     else:
-        md_lines.append("| Finding ID | Rule ID | File | Discard Reason |")
-        md_lines.append("|---|---|---|---|")
-        for f in discarded:
+        md_lines.append("| Finding ID | Rule ID | Location | Reviewer Verdict | Audit Reason |")
+        md_lines.append("|---|---|---|---|---|")
+        for f in rejected:
             f_id = f.get("finding_id", "UNKNOWN")
             rule_id = f.get("rule_id", "UNKNOWN")
-            # Handle DAST URL target vs SAST file path
-            file_loc = Path(f.get("file_path", "")).name if f.get("file_path") else f.get("target", "N/A")
-            reason = f.get("llm_review", {}).get("review_reason") or f.get("llm_assessment", {}).get("reasoning") or "Discarded by 2nd pass review"
-            md_lines.append(f"| `{f_id}` | `{rule_id}` | `{file_loc}` | {reason} |")
+            loc = get_location_info(f)
+            review = f.get("llm_review", {})
+            assessment = f.get("llm_assessment", {})
+            reason = review.get("review_reason") or assessment.get("reasoning") or "Evaluated as non-exploitable context."
+            md_lines.append(f"| `{f_id}` | `{rule_id}` | {loc['display_text']} | `REJECTED` | {reason} |")
+
+    md_lines.extend(["", "## Appendix: Requires Manual Verification", ""])
+    if not needs_review:
+        md_lines.append("*No findings require manual verification.*")
+    else:
+        md_lines.append("| Finding ID | Rule ID | Location | Reviewer Verdict | Audit Reason |")
+        md_lines.append("|---|---|---|---|---|")
+        for f in needs_review:
+            f_id = f.get("finding_id", "UNKNOWN")
+            rule_id = f.get("rule_id", "UNKNOWN")
+            loc = get_location_info(f)
+            review = f.get("llm_review", {})
+            assessment = f.get("llm_assessment", {})
+            reason = review.get("review_reason") or assessment.get("reasoning") or "Evidence incomplete; manual verification recommended."
+            md_lines.append(f"| `{f_id}` | `{rule_id}` | {loc['display_text']} | `NEEDS_REVIEW` | {reason} |")
 
     report_content = "\n".join(md_lines)
-
     output_file = Path(output_md_path).resolve()
     output_file.parent.mkdir(parents=True, exist_ok=True)
     with open(output_file, "w", encoding="utf-8") as f:
@@ -138,348 +240,184 @@ def generate_markdown_report(reviewed_findings: list, output_md_path: str = "rep
 
 
 def generate_html_report(reviewed_findings: list, output_html_path: str = "reports/sast_report.html") -> str:
-    """
-    Generates a modern HTML security dashboard report from reviewed findings.
+    """Generates a modern HTML security dashboard report using reports/report_template.html."""
+    meta = get_report_meta(reviewed_findings)
 
-    :param reviewed_findings: List of finding dictionaries with llm_assessment & llm_review.
-    :param output_html_path: Path to save the HTML report file.
-    :return: Generated HTML string.
-    """
-    confirmed = [
-        f for f in reviewed_findings
-        if f.get("llm_review", {}).get("decision") == "confirmed"
-        or (not f.get("llm_review", {}).get("decision") and f.get("llm_assessment", {}).get("is_plausible") is True)
-    ]
-    discarded = [f for f in reviewed_findings if f not in confirmed]
+    # 3-State Verdict Separation
+    confirmed = [f for f in reviewed_findings if get_review_verdict(f) == "confirmed"]
+    rejected = [f for f in reviewed_findings if get_review_verdict(f) == "rejected"]
+    needs_review = [f for f in reviewed_findings if f not in confirmed and f not in rejected]
 
-    # Convert frontend/logo.webp to base64 for standalone HTML embedding
+    # Convert frontend/logo.webp to base64 if present
     logo_b64 = ""
     logo_path = Path(__file__).resolve().parent.parent / "frontend" / "logo.webp"
     if logo_path.exists():
-        import base64
         with open(logo_path, "rb") as img_f:
             logo_b64 = base64.b64encode(img_f.read()).decode("utf-8")
 
-    logo_tag = f'<img src="data:image/webp;base64,{logo_b64}" alt="CCPL Logo" style="height: 38px; max-height: 38px; width: auto; max-width: 160px; object-fit: contain; vertical-align: middle; margin-right: 0.75rem; flex-shrink: 0;">' if logo_b64 else '🛡️ '
+    logo_tag = f'<img src="data:image/webp;base64,{logo_b64}" alt="CCPL Logo" style="height: 38px; max-height: 38px; width: auto; max-width: 160px; object-fit: contain; vertical-align: middle; margin-right: 0.75rem; flex-shrink: 0;">' if logo_b64 else ''
 
-    html_content = f"""<!DOCTYPE html>
-<html lang="en">
-<head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>CCPL Web SAST Security Assessment Report</title>
-    <link rel="preconnect" href="https://fonts.googleapis.com">
-    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-    <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@400;600;700&family=Fira+Code:wght@400;500&display=swap" rel="stylesheet">
-    <style>
-        :root {{
-            --bg-main: #f8fafc;
-            --card-bg: #ffffff;
-            --card-border: #e2e8f0;
-            --text-primary: #0f172a;
-            --text-secondary: #475569;
-            --text-muted: #64748b;
-            --brand-indigo: #4f46e5;
-            --accent-blue-bg: #eff6ff;
-            --accent-blue-border: #bfdbfe;
-            --accent-blue-text: #1d4ed8;
-            --accent-red-bg: #fef2f2;
-            --accent-red-border: #fecaca;
-            --accent-red-text: #dc2626;
-            --accent-green-bg: #ecfdf5;
-            --accent-green-border: #a7f3d0;
-            --accent-green-text: #059669;
-        }}
-        * {{ box-sizing: border-box; margin: 0; padding: 0; }}
-        body {{
-            font-family: 'Outfit', -apple-system, BlinkMacSystemFont, sans-serif;
-            background-color: var(--bg-main);
-            color: var(--text-primary);
-            padding: 2rem;
-            line-height: 1.6;
-            overflow-x: hidden;
-        }}
-        .container {{ max-width: 1100px; margin: 0 auto; width: 100%; }}
-        .header {{
-            background: #ffffff;
-            padding: 2rem;
-            border-radius: 14px;
-            border: 1px solid var(--card-border);
-            border-top: 5px solid var(--brand-indigo);
-            margin-bottom: 2rem;
-            box-shadow: 0 4px 20px rgba(15, 23, 42, 0.04);
-            display: flex;
-            align-items: center;
-            gap: 1rem;
-        }}
-        .header-text {{ flex: 1; }}
-        h1 {{ margin: 0 0 0.5rem 0; color: var(--brand-indigo); font-size: 1.8rem; font-weight: 700; }}
-        .meta-info {{ color: var(--text-muted); font-size: 0.9rem; margin-top: 0.5rem; }}
-        .stats-grid {{
-            display: grid;
-            grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
-            gap: 1.25rem;
-            margin-bottom: 2rem;
-            width: 100%;
-        }}
-        .stat-card {{
-            border-radius: 12px;
-            padding: 1.5rem;
-            text-align: center;
-            min-width: 0;
-        }}
-        .stat-card.evaluated {{ background: var(--accent-blue-bg); border: 1px solid var(--accent-blue-border); }}
-        .stat-card.confirmed {{ background: var(--accent-red-bg); border: 1px solid var(--accent-red-border); }}
-        .stat-card.discarded {{ background: var(--accent-green-bg); border: 1px solid var(--accent-green-border); }}
-        .stat-label {{ font-size: 0.88rem; font-weight: 600; color: var(--text-secondary); }}
-        .stat-number {{ font-size: 2.5rem; font-weight: 700; margin-top: 0.25rem; }}
-        .stat-number.blue {{ color: var(--accent-blue-text); }}
-        .stat-number.red {{ color: var(--accent-red-text); }}
-        .stat-number.green {{ color: var(--accent-green-text); }}
-        .section-title {{
-            font-size: 1.35rem;
-            margin: 2rem 0 1rem 0;
-            color: var(--text-primary);
-            font-weight: 700;
-        }}
-        .finding-card {{
-            background: #ffffff;
-            border: 1px solid var(--card-border);
-            border-radius: 12px;
-            padding: 1.6rem;
-            margin-bottom: 1.5rem;
-            box-shadow: 0 4px 15px rgba(15, 23, 42, 0.03);
-            max-width: 100%;
-            overflow-wrap: anywhere;
-            word-break: break-word;
-        }}
-        code, p, span, div {{ overflow-wrap: anywhere; word-break: break-word; }}
-        .badge {{
-            display: inline-block;
-            padding: 0.3rem 0.85rem;
-            border-radius: 6px;
-            font-weight: 700;
-            font-size: 0.78rem;
-            text-transform: uppercase;
-        }}
-        .badge-high {{ background: var(--accent-red-bg); color: var(--accent-red-text); border: 1px solid var(--accent-red-border); }}
-        .badge-medium {{ background: #fffbeb; color: #b45309; border: 1px solid #fde68a; }}
-        .badge-low {{ background: var(--accent-green-bg); color: var(--accent-green-text); border: 1px solid var(--accent-green-border); }}
-        pre {{
-            background: #0f172a;
-            padding: 1.1rem;
-            border-radius: 8px;
-            overflow-x: auto;
-            border: 1px solid #1e293b;
-            font-family: 'Fira Code', monospace;
-            font-size: 0.88rem;
-            color: #f1f5f9;
-            margin-top: 0.5rem;
-            white-space: pre-wrap;
-            word-break: break-all;
-            max-width: 100%;
-        }}
-        .reasoning-box {{
-            background: var(--accent-blue-bg);
-            border-left: 4px solid var(--brand-indigo);
-            padding: 1.1rem;
-            margin: 1.1rem 0;
-            border-radius: 0 8px 8px 0;
-            font-size: 0.92rem;
-            color: #1e3a8a;
-            word-break: break-word;
-        }}
-        @media print {{
-            body {{ background-color: #ffffff; padding: 0; }}
-            .container {{ max-width: 100%; }}
-            .header, .finding-card, .stat-card {{ box-shadow: none; page-break-inside: avoid; }}
-        }}
-    </style>
-</head>
-<body>
-    <div class="container">
-        <div class="header">
-            {logo_tag}
-            <div class="header-text">
-                <h1>CCPL Web SAST Security Assessment Report</h1>
-                <div class="meta-info">
-                    <p><strong>Target Codebase:</strong> DVWA (<code>targets/DVWA</code>) | <strong>Engine:</strong> Semgrep + Ollama (<code>qwen3:8b</code>)</p>
-                    <p><strong>Report Timestamp:</strong> {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}</p>
-                </div>
-            </div>
-        </div>
+    # Load HTML template
+    template_path = Path(__file__).resolve().parent / "report_template.html"
+    if not template_path.exists():
+        logger.error(f"HTML Template file missing at: {template_path}")
+        raise FileNotFoundError(f"Template missing: {template_path}")
 
-        <div class="stats-grid">
-            <div class="stat-card evaluated">
-                <div class="stat-label">Evaluated Findings</div>
-                <div class="stat-number blue">{len(reviewed_findings)}</div>
-            </div>
-            <div class="stat-card confirmed">
-                <div class="stat-label">Confirmed Risks</div>
-                <div class="stat-number red">{len(confirmed)}</div>
-            </div>
-            <div class="stat-card discarded">
-                <div class="stat-label">False Positives Discarded</div>
-                <div class="stat-number green">{len(discarded)}</div>
-            </div>
-        </div>
+    template_str = template_path.read_text(encoding="utf-8")
 
-        <h2 class="section-title">📊 Security Findings Summary Matrix</h2>
-        <div class="finding-card" style="padding: 1rem; overflow-x: auto;">
-            <table style="width: 100%; border-collapse: collapse; text-align: left; font-size: 0.88rem;">
-                <thead>
-                    <tr style="background: #f1f5f9; border-bottom: 2px solid var(--card-border);">
-                        <th style="padding: 0.75rem;">Finding ID</th>
-                        <th style="padding: 0.75rem;">Vulnerability / Rule</th>
-                        <th style="padding: 0.75rem;">File Location</th>
-                        <th style="padding: 0.75rem;">Severity</th>
-                        <th style="padding: 0.75rem;">AI Final Verdict</th>
-                    </tr>
-                </thead>
-                <tbody>
-"""
-
+    # Build Summary Matrix Rows
+    matrix_rows = []
     for f in reviewed_findings:
         f_id = f.get("finding_id", "UNKNOWN")
-        title = f.get("title", "Security Issue")
-        
-        # Dual SAST/DAST location handling for matrix table
-        target_url = f.get("target")
-        if target_url:
-            location_html = f"<code>{target_url}</code>"
+        title = f.get("title") or f.get("vulnerability_type") or "Security Issue"
+        loc = get_location_info(f)
+        verdict = get_review_verdict(f)
+        sev = get_final_severity(f)
+
+        if verdict == "confirmed":
+            verdict_badge = "<span class='badge badge-high'>CONFIRMED</span>"
+        elif verdict == "rejected":
+            verdict_badge = "<span class='badge badge-low'>REJECTED</span>"
         else:
-            file_path = Path(f.get("file_path", "")).name
-            lines_str = f"L{f.get('start_line')}-{f.get('end_line')}"
-            location_html = f"<code>{file_path}:{lines_str}</code>"
-            
-        review = f.get("llm_review", {})
-        assessment = f.get("llm_assessment", {})
-        decision = review.get("decision") or ("confirmed" if assessment.get("is_plausible") else "rejected")
-        is_conf = decision == "confirmed"
-        sev = (review.get("final_severity") or assessment.get("severity") or f.get("scanner_severity", "LOW")).upper()
-        
-        verdict_badge = "<span class='badge badge-high'>CONFIRMED</span>" if is_conf else "<span class='badge badge-low'>DISCARDED (FP)</span>"
-        sev_badge = f"<span class='badge badge-high'>{sev}</span>" if is_conf else f"<span class='badge badge-low'>{sev}</span>"
+            verdict_badge = "<span class='badge badge-medium'>NEEDS REVIEW</span>"
 
-        html_content += f"""
-                    <tr style="border-bottom: 1px solid var(--card-border);">
-                        <td style="padding: 0.75rem;"><strong>{f_id}</strong></td>
-                        <td style="padding: 0.75rem;">{title}<br><code style="font-size: 0.75rem; color: var(--text-muted);">{f.get('rule_id')}</code></td>
-                        <td style="padding: 0.75rem;">{location_html}</td>
-                        <td style="padding: 0.75rem;">{sev_badge}</td>
-                        <td style="padding: 0.75rem;">{verdict_badge}</td>
-                    </tr>
-"""
+        sev_badge = f"<span class='badge badge-high'>{sev}</span>" if sev in ("CRITICAL", "HIGH") else (f"<span class='badge badge-medium'>{sev}</span>" if sev == "MEDIUM" else f"<span class='badge badge-low'>{sev}</span>")
 
-    html_content += """
-                </tbody>
-            </table>
-        </div>
+        matrix_rows.append(f"""
+            <tr style="border-bottom: 1px solid var(--card-border);">
+                <td style="padding: 0.75rem;"><strong>{f_id}</strong></td>
+                <td style="padding: 0.75rem;">{title}<br><code style="font-size: 0.75rem; color: var(--text-muted);">{f.get('rule_id')}</code></td>
+                <td style="padding: 0.75rem;">{loc['html_display']}</td>
+                <td style="padding: 0.75rem;">{sev_badge}</td>
+                <td style="padding: 0.75rem;">{verdict_badge}</td>
+            </tr>
+        """)
 
-        <h2 class="section-title">🚨 Section 1: Confirmed Security Findings</h2>
-"""
-
+    # Build Confirmed Cards
+    confirmed_cards = []
     if not confirmed:
-        html_content += "<div class='finding-card'><p>No confirmed vulnerabilities detected in the evaluated sample.</p></div>"
+        confirmed_cards.append("<div class='finding-card'><p>No confirmed vulnerabilities detected in the evaluated sample.</p></div>")
     else:
         for f in confirmed:
             f_id = f.get("finding_id", "UNKNOWN")
-            title = f.get("title", "Security Issue")
-            
-            # Dual SAST/DAST location handling
-            target_url = f.get("target")
-            if target_url:
-                location_tag = f"<strong>Target URL:</strong> <code>{target_url}</code>"
-                context_label = "📄 Live HTTP Evidence Context:"
-                context_data = f.get("evidence_context", "")
-            else:
-                lines_str = f"{f.get('start_line')}-{f.get('end_line')}"
-                location_tag = f"<strong>Location:</strong> <code>{f.get('file_path', '')}</code> (Lines {lines_str})"
-                context_label = "📄 Source Code Context:"
-                context_data = f.get("code_context", "")
-                
+            title = f.get("title") or f.get("vulnerability_type") or "Security Issue"
+            loc = get_location_info(f)
+            sev = get_final_severity(f)
+            badge_class = "badge-high" if sev in ("CRITICAL", "HIGH") else ("badge-medium" if sev == "MEDIUM" else "badge-low")
+
             review = f.get("llm_review", {})
             assessment = f.get("llm_assessment", {})
-            sev = (review.get("final_severity") or assessment.get("severity") or f.get("scanner_severity", "HIGH")).upper()
-            badge_class = "badge-high" if sev in ("CRITICAL", "HIGH") else ("badge-medium" if sev == "MEDIUM" else "badge-low")
             reasoning = review.get("review_reason") or assessment.get("reasoning", "No explanation available.")
-            remediation = assessment.get("remediation", "No remediation snippet available.")
+            remediation = assessment.get("remediation", "No remediation recommendation available.")
 
-            html_content += f"""
+            confirmed_cards.append(f"""
         <div class="finding-card">
             <div>
                 <span class="badge {badge_class}">{sev}</span>
                 <strong style="margin-left: 0.5rem; font-size: 1.1rem;">{f_id}: {title}</strong>
             </div>
             <p style="color: var(--text-muted); font-size: 0.88rem; margin-top: 0.5rem;">
-                {location_tag} | <strong>Rule:</strong> <code>{f.get('rule_id')}</code>
+                <strong>Location:</strong> {loc['html_display']} | <strong>Rule:</strong> <code>{f.get('rule_id')}</code>
             </p>
 
             <div class="reasoning-box">
-                <strong>🤖 AI Security Reasoning & Evidence:</strong>
+                <strong>AI Security Reasoning & Evidence:</strong>
                 <p style="margin-top: 0.4rem;">{reasoning}</p>
             </div>
 
-            <strong>🛠️ Remediation Recommendation:</strong>
-            <pre><code>{remediation}</code></pre>
+            <strong style="display: block; margin-top: 0.75rem;">Remediation Recommendation:</strong>
+            <div class="remediation-box">{remediation}</div>
 
-            <strong style="display: block; margin-top: 0.75rem;">{context_label}</strong>
-            <pre><code>{context_data}</code></pre>
+            <strong style="display: block; margin-top: 0.75rem;">{loc['context_label']}</strong>
+            <pre><code>{loc['context_data']}</code></pre>
         </div>
-"""
+        """)
 
-    html_content += """
-        <h2 class="section-title">🛡️ Section 2: Discarded False Positives Audit Log</h2>
-"""
-
-    if not discarded:
-        html_content += "<div class='finding-card'><p>No false positives were discarded in this evaluation.</p></div>"
+    # Build Rejected Cards
+    rejected_cards = []
+    if not rejected:
+        rejected_cards.append("<div class='finding-card'><p>No false positives were rejected in this evaluation.</p></div>")
     else:
-        for f in discarded:
+        for f in rejected:
             f_id = f.get("finding_id", "UNKNOWN")
-            title = f.get("title", "Security Issue")
-            
-            # Dual SAST/DAST location handling
-            target_url = f.get("target")
-            if target_url:
-                location_tag = f"<strong>Target URL:</strong> <code>{target_url}</code>"
-                context_label = "📄 Live HTTP Evidence Context:"
-                context_data = f.get("evidence_context", "")
-            else:
-                lines_str = f"{f.get('start_line')}-{f.get('end_line')}"
-                location_tag = f"<strong>Location:</strong> <code>{f.get('file_path', '')}</code> (Lines {lines_str})"
-                context_label = "📄 Source Code Context:"
-                context_data = f.get("code_context", "")
-                
+            title = f.get("title") or f.get("vulnerability_type") or "Security Issue"
+            loc = get_location_info(f)
+
             review = f.get("llm_review", {})
             assessment = f.get("llm_assessment", {})
             reasoning = review.get("review_reason") or assessment.get("reasoning", "Evaluated as non-exploitable context.")
 
-            html_content += f"""
-        <div class="finding-card" style="border-left: 4px solid var(--accent-green-text);">
+            rejected_cards.append(f"""
+        <div class="finding-card" style="border-top: 4px solid var(--accent-green-text);">
             <div>
-                <span class="badge badge-low">FALSE POSITIVE DISCARDED</span>
+                <span class="badge badge-low">REJECTED FALSE POSITIVE</span>
                 <strong style="margin-left: 0.5rem; font-size: 1.1rem;">{f_id}: {title}</strong>
             </div>
             <p style="color: var(--text-muted); font-size: 0.88rem; margin-top: 0.5rem;">
-                {location_tag} | <strong>Rule:</strong> <code>{f.get('rule_id')}</code>
+                <strong>Location:</strong> {loc['html_display']} | <strong>Rule:</strong> <code>{f.get('rule_id')}</code>
             </p>
 
             <div class="reasoning-box" style="background: var(--accent-green-bg); border-left-color: var(--accent-green-text); color: var(--accent-green-text);">
-                <strong>🤖 AI Reason for Discarding:</strong>
+                <strong>AI Reason for Rejection:</strong>
                 <p style="margin-top: 0.4rem;">{reasoning}</p>
             </div>
 
-            <strong style="display: block; margin-top: 0.75rem;">{context_label}</strong>
-            <pre><code>{context_data}</code></pre>
+            <strong style="display: block; margin-top: 0.75rem;">{loc['context_label']}</strong>
+            <pre><code>{loc['context_data']}</code></pre>
         </div>
-"""
+        """)
 
-    html_content += """
-    </div>
-</body>
-</html>
-"""
+    # Build Needs Review Cards
+    needs_review_cards = []
+    if not needs_review:
+        needs_review_cards.append("<div class='finding-card'><p>No findings require manual verification.</p></div>")
+    else:
+        for f in needs_review:
+            f_id = f.get("finding_id", "UNKNOWN")
+            title = f.get("title") or f.get("vulnerability_type") or "Security Issue"
+            loc = get_location_info(f)
+
+            review = f.get("llm_review", {})
+            assessment = f.get("llm_assessment", {})
+            reasoning = review.get("review_reason") or assessment.get("reasoning", "Evidence incomplete; manual verification recommended.")
+
+            needs_review_cards.append(f"""
+        <div class="finding-card" style="border-top: 4px solid #f59e0b;">
+            <div>
+                <span class="badge badge-medium">REQUIRES MANUAL VERIFICATION</span>
+                <strong style="margin-left: 0.5rem; font-size: 1.1rem;">{f_id}: {title}</strong>
+            </div>
+            <p style="color: var(--text-muted); font-size: 0.88rem; margin-top: 0.5rem;">
+                <strong>Location:</strong> {loc['html_display']} | <strong>Rule:</strong> <code>{f.get('rule_id')}</code>
+            </p>
+
+            <div class="reasoning-box" style="background: #fffbeb; border-left-color: #f59e0b; color: #92400e;">
+                <strong>AI Reason for Manual Verification:</strong>
+                <p style="margin-top: 0.4rem;">{reasoning}</p>
+            </div>
+
+            <strong style="display: block; margin-top: 0.75rem;">{loc['context_label']}</strong>
+            <pre><code>{loc['context_data']}</code></pre>
+        </div>
+        """)
+
+    # Fill template placeholders
+    html_content = (
+        template_str
+        .replace("{{LOGO_TAG}}", logo_tag)
+        .replace("{{REPORT_TITLE}}", meta["title"])
+        .replace("{{TARGET_SYSTEM}}", meta["target_system"])
+        .replace("{{LLM_ENGINE}}", meta["llm_engine"])
+        .replace("{{REPORT_TIMESTAMP}}", datetime.now().strftime("%Y-%m-%d %H:%M:%S"))
+        .replace("{{TOTAL_EVALUATED}}", str(len(reviewed_findings)))
+        .replace("{{CONFIRMED_COUNT}}", str(len(confirmed)))
+        .replace("{{REJECTED_COUNT}}", str(len(rejected)))
+        .replace("{{NEEDS_REVIEW_COUNT}}", str(len(needs_review)))
+        .replace("{{MATRIX_ROWS}}", "".join(matrix_rows))
+        .replace("{{CONFIRMED_CARDS}}", "".join(confirmed_cards))
+        .replace("{{REJECTED_CARDS}}", "".join(rejected_cards))
+        .replace("{{NEEDS_REVIEW_CARDS}}", "".join(needs_review_cards))
+    )
 
     output_file = Path(output_html_path).resolve()
     output_file.parent.mkdir(parents=True, exist_ok=True)

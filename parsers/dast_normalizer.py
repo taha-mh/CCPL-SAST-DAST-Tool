@@ -1,13 +1,3 @@
-"""
-DAST Normalizer & HTTP Context Module for CCPL Web Security Tool.
-
-Responsibility:
-1. Load raw ZAP findings from data/raw/dast_findings.json.
-2. Standardize fields into unified JSON schema.
-3. Format DAST finding evidence summary into code_context string.
-4. Save normalized findings to data/normalized/dast_normalized.json.
-"""
-
 import json
 import logging
 from pathlib import Path
@@ -25,13 +15,59 @@ SEVERITY_MAP = {
 }
 
 
+def parse_zap_response_headers(raw_headers_text: str) -> dict:
+    """
+    Parses raw HTTP response header text captured directly by OWASP ZAP during scan.
+    Strictly zero network calls made.
+    """
+    if not raw_headers_text or not isinstance(raw_headers_text, str) or not raw_headers_text.strip():
+        return {"status": "FAILED", "reason": "No response headers captured by ZAP"}
+
+    lines = [line.strip() for line in raw_headers_text.splitlines() if line.strip()]
+    if not lines:
+        return {"status": "FAILED", "reason": "Empty response header lines"}
+
+    # Extract Status Code from status line (e.g. HTTP/1.1 200 OK)
+    status_line = lines[0]
+    status_code = "N/A"
+    status_parts = status_line.split()
+    if len(status_parts) >= 2 and status_parts[1].isdigit():
+        status_code = status_parts[1]
+
+    headers_dict = {}
+    for line in lines[1:]:
+        if ":" in line:
+            k, v = line.split(":", 1)
+            headers_dict[k.strip()] = v.strip()
+
+    lower_keys = {k.lower(): (k, v) for k, v in headers_dict.items()}
+
+    sec_headers = ["X-Content-Type-Options", "X-Frame-Options", "Content-Security-Policy", "Strict-Transport-Security"]
+    header_status = {}
+    for sh in sec_headers:
+        if sh.lower() in lower_keys:
+            orig_key, val = lower_keys[sh.lower()]
+            header_status[sh] = val if val != "" else "[EMPTY]"
+        else:
+            header_status[sh] = "[NOT PRESENT]"
+
+    return {
+        "status": "SUCCESS",
+        "status_code": status_code,
+        "content_type": headers_dict.get("Content-Type", headers_dict.get("content-type", "N/A")),
+        "x_powered_by": headers_dict.get("X-Powered-By", headers_dict.get("x-powered-by", "N/A")),
+        "set_cookie": headers_dict.get("Set-Cookie", headers_dict.get("set-cookie", "N/A")),
+        "sec_headers": header_status,
+    }
+
+
 def normalize_dast_findings(
     raw_json_path: str = "data/raw/dast_findings.json",
     output_json_path: str = "data/normalized/dast_normalized.json",
 ) -> list[dict]:
     """
     Normalizes raw ZAP DAST findings and formats HTTP Request/Response evidence context.
-    Strictly separates observed HTTP evidence from scanner description text and missing evidence.
+    Uses ONLY HTTP response evidence captured by OWASP ZAP during its scan.
     """
     raw_path = (BASE_DIR / raw_json_path).resolve()
     output_path = (BASE_DIR / output_json_path).resolve()
@@ -45,7 +81,7 @@ def normalize_dast_findings(
         raw_payload = json.load(f)
 
     raw_results = raw_payload.get("dast_raw_results", [])
-    logger.info(f"Normalizing {len(raw_results)} raw DAST findings...")
+    logger.info(f"Normalizing {len(raw_results)} raw DAST findings using ZAP-captured HTTP evidence...")
 
     normalized_list: list[dict] = []
     for idx, item in enumerate(raw_results, start=1):
@@ -58,9 +94,10 @@ def normalize_dast_findings(
         raw_attack = item.get("payload_used", "").strip()
         raw_evidence = item.get("evidence_snippet", "").strip()
         raw_description = item.get("test_description", "").strip()
+        raw_resp_headers = item.get("response_headers", "").strip()
         plugin_id_str = str(item.get("category", ""))
 
-        # 1. Reliable scan_type classification (do not guess blindly)
+        # 1. Reliable scan_type classification
         source_id = str(item.get("sourceid", ""))
         if source_id in ["1", "2"]:
             scan_type = "passive"
@@ -83,7 +120,10 @@ def normalize_dast_findings(
             tested_header = "N/A"
             parameter_tested = raw_param if raw_param else "N/A"
 
-        # 3. Format Observed Evidence vs Scanner Description vs Missing Evidence
+        # Parse ZAP's captured response headers (NO network calls)
+        parsed_res = parse_zap_response_headers(raw_resp_headers)
+
+        # 3. Format Structured Evidence Blocks
         evidence_blocks = []
         evidence_blocks.append("=== DAST LIVE HTTP EVIDENCE ===")
         evidence_blocks.append(f"Scan Type: {scan_type}")
@@ -93,6 +133,20 @@ def normalize_dast_findings(
             evidence_blocks.append(f"Tested Response Header: {tested_header}")
         if parameter_tested != "N/A":
             evidence_blocks.append(f"Tested Parameter: {parameter_tested}")
+
+        # CAPTURED HTTP RESPONSE SECTION
+        evidence_blocks.append("\n[CAPTURED HTTP RESPONSE]")
+        if parsed_res.get("status") == "SUCCESS":
+            evidence_blocks.append(f"HTTP Status: {parsed_res['status_code']}")
+            evidence_blocks.append(f"Content-Type: {parsed_res['content_type']}")
+            if parsed_res["x_powered_by"] != "N/A":
+                evidence_blocks.append(f"X-Powered-By: {parsed_res['x_powered_by']}")
+            if parsed_res["set_cookie"] != "N/A":
+                evidence_blocks.append(f"Set-Cookie: {parsed_res['set_cookie']}")
+            for sh, val in parsed_res["sec_headers"].items():
+                evidence_blocks.append(f"{sh}: {val}")
+        else:
+            evidence_blocks.append(f"[ZAP CAPTURED RESPONSE STATUS] Status: NO_RESPONSE_HEADER_CAPTURED_BY_ZAP")
 
         # OBSERVED EVIDENCE SECTION
         observed_items = []

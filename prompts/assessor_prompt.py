@@ -1,9 +1,9 @@
 """
-LLM Assessor Prompt Template for CCPL Web SAST Tool.
+LLM Assessor Prompt Template for CCPL Web Security Testing Tool.
 
 Responsibility:
-Provide structured system instructions and user prompt formatters for Qwen3 8B
-to assess raw SAST security findings against surrounding source code context.
+Provide structured system instructions and user prompt formatters
+to assess security findings against surrounding source code or HTTP evidence context.
 """
 
 ASSESSOR_SYSTEM_PROMPT = """You are an expert Application Security Senior Auditor.
@@ -30,6 +30,26 @@ REQUIRED JSON SCHEMA:
   "confidence": "HIGH" | "MEDIUM" | "LOW"
 }
 """
+
+ASSESSOR_RESPONSE_SCHEMA = {
+    "type": "object",
+    "additionalProperties": False,
+    "required": [
+        "finding_id", "is_plausible", "vulnerability_type", "severity",
+        "reasoning", "evidence", "impact", "remediation", "confidence",
+    ],
+    "properties": {
+        "finding_id": {"type": "string"},
+        "is_plausible": {"type": "boolean"},
+        "vulnerability_type": {"type": "string"},
+        "severity": {"type": "string", "enum": ["CRITICAL", "HIGH", "MEDIUM", "LOW", "INFO"]},
+        "reasoning": {"type": "string"},
+        "evidence": {"type": "string"},
+        "impact": {"type": "string"},
+        "remediation": {"type": "string"},
+        "confidence": {"type": "string", "enum": ["HIGH", "MEDIUM", "LOW"]},
+    },
+}
 
 
 def build_assessor_user_prompt(finding: dict) -> str:

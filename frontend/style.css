@@ -131,7 +131,7 @@ h1 { font-size: 1.6rem; color: var(--brand-indigo); font-weight: 700; letter-spa
 /* Main Grid Layout - Responsive Column Sizing */
 .dashboard-grid {
     display: grid;
-    grid-template-columns: 320px minmax(0, 1fr); /* minmax(0, 1fr) prevents grid overflow */
+    grid-template-columns: 380px minmax(0, 1fr); /* minmax(0, 1fr) prevents grid overflow */
     gap: 1.5rem;
     width: 100%;
     max-width: 100%;
@@ -208,6 +208,66 @@ label {
     line-height: 1.4;
 }
 
+.visually-hidden {
+    position: absolute !important;
+    width: 1px !important;
+    height: 1px !important;
+    padding: 0 !important;
+    margin: -1px !important;
+    overflow: hidden !important;
+    clip: rect(0, 0, 0, 0) !important;
+    white-space: nowrap !important;
+    border: 0 !important;
+}
+
+.pipeline-options {
+    display: grid;
+    gap: 0.7rem;
+}
+
+.pipeline-option {
+    width: 100%;
+    padding: 0.9rem 1rem;
+    border: 1px solid var(--card-border);
+    border-radius: 12px;
+    background: #fff;
+    color: var(--text-primary);
+    text-align: left;
+    cursor: pointer;
+    display: grid;
+    grid-template-columns: auto 1fr;
+    column-gap: 0.75rem;
+    transition: var(--transition-smooth);
+}
+
+.pipeline-option strong,
+.pipeline-option small {
+    grid-column: 2;
+}
+
+.pipeline-option small {
+    color: var(--text-muted);
+    line-height: 1.35;
+}
+
+.pipeline-option.active {
+    border-color: var(--brand-indigo);
+    background: var(--accent-blue-bg);
+    box-shadow: 0 0 0 2px rgba(79, 70, 229, 0.1);
+}
+
+.phase-kicker {
+    grid-row: 1 / span 2;
+    align-self: center;
+    color: var(--brand-indigo);
+    background: #eef2ff;
+    border-radius: 999px;
+    padding: 0.25rem 0.55rem;
+    font-size: 0.72rem;
+    font-weight: 700;
+    white-space: nowrap;
+}
+
 /* Primary Button */
 .btn {
     display: inline-flex;
@@ -266,15 +326,41 @@ label {
     max-width: 100%;
 }
 
-.metric-evaluated { background: var(--accent-blue-bg); border: 1px solid var(--accent-blue-border); }
-.metric-confirmed { background: var(--accent-red-bg); border: 1px solid var(--accent-red-border); }
-.metric-discarded { background: var(--accent-green-bg); border: 1px solid var(--accent-green-border); }
+.metric-evaluated { background: var(--accent-blue-bg); border: 1px solid var(--accent-blue-border); cursor: pointer; }
+.metric-confirmed { background: var(--accent-red-bg); border: 1px solid var(--accent-red-border); cursor: pointer; }
+.metric-discarded { background: var(--accent-green-bg); border: 1px solid var(--accent-green-border); cursor: pointer; }
+.metric-needs-review { background: #fefce8; border: 1px solid #fef08a; cursor: pointer; }
+
+.stat-card:hover {
+    transform: translateY(-2px);
+    box-shadow: 0 6px 20px rgba(0,0,0,0.06);
+}
 
 .stat-label { font-size: 0.85rem; font-weight: 600; color: var(--text-secondary); }
 .stat-value { display: block; font-size: 2.5rem; font-weight: 700; margin-top: 0.2rem; }
 .text-blue { color: var(--accent-blue-text); }
 .text-red { color: var(--accent-red-text); }
 .text-green { color: var(--accent-green-text); }
+.text-yellow { color: #ca8a04; }
+
+.badge-medium {
+    background: #fefce8;
+    color: #ca8a04;
+    border: 1px solid #fef08a;
+}
+
+.step-num {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 20px;
+    height: 20px;
+    border-radius: 50%;
+    background: var(--card-border);
+    color: var(--text-secondary);
+    font-size: 0.75rem;
+    font-weight: 700;
+}
 
 /* Filter Tabs Bar - Fixed Overflow & Width Containment */
 .tab-navigation {

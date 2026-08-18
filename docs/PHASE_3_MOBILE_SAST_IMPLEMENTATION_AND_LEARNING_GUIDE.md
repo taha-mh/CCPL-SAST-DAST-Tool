@@ -229,7 +229,7 @@ Success requires all of the following evidence:
 
 ## Next controlled step
 
-Inspect the genuine MobSF schema and design the Mobile SAST normalizer without changing the preserved raw report. Do not start either OpenAI pass until normalized evidence has focused tests and traceability back to the raw MobSF sections.
+Run a controlled live OpenAI assessment on a small number of normalized findings after `OPENAI_API_KEY` is supplied through the local environment. The implementation and schema tests are complete, but no live Phase 3 AI verdict is claimed in this document yet.
 
 ## Step 3 — Dual APK input workflow
 
@@ -344,4 +344,72 @@ The final raw report contains five code findings. This illustrates why HTTP 200 
 
 ### Supervisor explanation
 
-> Docker could not operate because our Windows development system is already a VM and the host does not permit virtualization inside it. We used MobSF's supported native Windows deployment instead. The scanner now runs locally, the DIVA APK was scanned through the automated API, and the unchanged JSON plus cryptographic hashes were preserved. The scanner produced genuine candidate findings, but AI confirmation has deliberately not started until the raw mobile schema and missing code-analysis section are understood.
+> Docker could not operate because our Windows development system is already a VM and the host does not permit virtualization inside it. We used MobSF's supported native Windows deployment instead. The scanner now runs locally, the DIVA APK was scanned through the automated API, and the unchanged JSON plus cryptographic hashes were preserved. The scanner produced genuine candidate findings. Normalization and both OpenAI stages are implemented and tested with controlled fixtures; a live AI verdict still requires the API key to be supplied at runtime.
+
+## Step 5 - Main-branch integration and Mobile SAST normalization
+
+Status: **Implemented and regression-tested on 2026-08-18**
+
+The latest tagged Phase 1/2 implementation from `main` was merged into `refactoring`. The mentor-maintained modular FastAPI routers, DAST evidence improvements, three-verdict reporting, and frontend cleanup were retained as the shared baseline. Phase 3 additions were then reapplied to that architecture instead of restoring the older monolithic `main.py`.
+
+The Mobile SAST normalizer is `parsers/mobsf_normalizer.py`. It performs transformation only and never confirms a vulnerability. It reads the unchanged `data/raw/mobsf.json`, optionally reads separately preserved MobSF decompiled-source responses, and produces `data/normalized/mobile_findings.json`.
+
+The genuine DIVA report produced 24 normalized candidate findings:
+
+| Category | Count |
+|---|---:|
+| Manifest | 5 |
+| Decompiled code rules | 5 |
+| Certificate | 2 |
+| Permissions | 3 |
+| Grouped native-binary checks | 9 |
+| **Total** | **24** |
+
+Severity mapping produced five `HIGH`, ten `MEDIUM`, and nine `INFO` scanner severities. These are scanner severities, not final AI verdicts. Each normalized record keeps a stable finding ID, MobSF rule/category, APK identity, location, evidence context, metadata, and the original raw evidence.
+
+For code findings, the runner can call MobSF's static `view_source` API and save source responses separately in `data/raw/mobsf_sources.json`. The normalizer extracts a five-line window before and after reported lines when that evidence exists. This does not rewrite the original MobSF report.
+
+## Step 6 - Dual OpenAI assessment design
+
+Status: **Implemented and contract-tested; live API run pending local key configuration**
+
+Both Mobile SAST passes use OpenAI `gpt-5.4-nano` by explicit project decision:
+
+```text
+Normalized MobSF finding
+  -> Pass 1 OpenAI assessor
+  -> Pass 2 independent-role OpenAI reviewer
+  -> confirmed / rejected / needs_review
+```
+
+The two passes use separate prompts and schemas, but the same model family. This is logical review independence, not vendor or model independence. The API provider uses the OpenAI Responses API, strict JSON Schema output, `store: false`, a bounded output-token limit, and fail-safe error objects. A missing key, timeout, authentication failure, quota/rate-limit response, empty response, or schema mismatch cannot be converted into a confirmed finding.
+
+Configuration uses environment variables only:
+
+```text
+OPENAI_API_KEY=<never commit this value>
+OPENAI_MODEL=gpt-5.4-nano
+MOBILE_OPENAI_MODEL=gpt-5.4-nano
+OPENAI_REASONING_EFFORT=low
+OPENAI_MAX_OUTPUT_TOKENS=900
+```
+
+This is an approved Phase 3 exception to the original local-only LLM requirement. MobSF and APK processing remain local, but the evidence supplied to the assessor and reviewer is sent to OpenAI. This privacy boundary must be disclosed before scanning any private or client APK.
+
+## Step 7 - Unified three-phase interface
+
+Status: **Implemented and route-tested on 2026-08-18**
+
+The frontend now presents three explicit choices:
+
+1. Phase 1 - Web SAST with Semgrep.
+2. Phase 2 - Web DAST with OWASP ZAP.
+3. Phase 3 - Mobile SAST with MobSF.
+
+Mobile SAST supports both an APK already below `targets/` and a browser upload. Both paths converge on the same backend pipeline. The phase-specific six-step labels, evidence location, live status stream, three verdict categories, and Mobile SAST report links are selected automatically.
+
+Figma integration was not used because the requested Figma workspace belongs to a different account and was not connected to this development session. The frontend was implemented directly in the repository without blocking the functional integration.
+
+## Verification record
+
+The repository-owned suite completed with `23 passed` and one existing Starlette deprecation warning. Python compilation passed for the entry point, routers, MobSF runner/normalizer, and OpenAI modules. The generated genuine normalized JSON parsed successfully and contained 24 findings. The tests use simulated MobSF/OpenAI responses for deterministic integration contracts; they are not presented as a live OpenAI security assessment.
