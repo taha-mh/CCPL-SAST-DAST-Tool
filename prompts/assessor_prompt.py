@@ -1,9 +1,9 @@
 """
-LLM Assessor Prompt Template for CCPL Web SAST Tool.
+LLM Assessor Prompt Template for CCPL Web Security Testing Tool.
 
 Responsibility:
-Provide structured system instructions and user prompt formatters for Qwen3 8B
-to assess raw SAST security findings against surrounding source code context.
+Provide structured system instructions and user prompt formatters
+to assess security findings against surrounding source code or HTTP evidence context.
 """
 
 ASSESSOR_SYSTEM_PROMPT = """You are an expert Application Security Senior Auditor.

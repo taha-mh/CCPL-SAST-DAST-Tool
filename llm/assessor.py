@@ -1,11 +1,11 @@
 """
-LLM Assessor Module for CCPL Web SAST Tool.
+LLM Assessor Module for CCPL Web Security Testing Tool.
 
 Responsibility:
-1. Load enriched findings from data/normalized/findings_with_context.json.
-2. Send each finding and code context to local Ollama (qwen3:8b) API using the requests library.
+1. Load enriched findings from normalized findings JSON.
+2. Send each finding and code/HTTP context to central LLM Provider (`llm/provider.py`).
 3. Parse and validate the LLM's structured JSON assessment.
-4. Save results to data/normalized/assessed_findings.json.
+4. Save results to assessed findings JSON.
 """
 
 import json
@@ -103,7 +103,7 @@ def run_llm_assessor(
 
 
 if __name__ == "__main__":
-    print("--- Running Milestone 5: LLM Assessor (Qwen3 8B) Test ---")
+    print("--- Running Pass 1: LLM Assessor Test ---")
     results = run_llm_assessor(max_findings=3)  # Set to process 3 findings for test
     print(f"\nTotal Assessed Findings: {len(results)}")
     if results:

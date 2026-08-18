@@ -1,9 +1,9 @@
 """
-LLM Reviewer Prompt Template for CCPL Web SAST Tool.
+LLM Reviewer Prompt Template for CCPL Web Security Testing Tool.
 
 Responsibility:
-Provide structured system instructions and user prompt formatters for Qwen3 8B
-to perform a second logical review pass on the initial LLM assessment.
+Provide structured system instructions and user prompt formatters
+to perform a second logical review pass on initial security assessments.
 """
 
 REVIEWER_SYSTEM_PROMPT = """You are the Chief Application Security Officer reviewing an initial security assessment.
