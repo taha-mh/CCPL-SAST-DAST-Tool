@@ -123,7 +123,7 @@ The selected repository is a public mirror containing the compiled DIVA APK and 
 
 ## Step 2 — Toolchain and scanner selection
 
-Status: **Pending**
+Status: **Complete and verified with a native Windows MobSF runtime on 2026-08-17**
 
 The next decision must distinguish two responsibilities:
 
@@ -132,6 +132,216 @@ The next decision must distinguish two responsibilities:
 
 Candidate tools must be evaluated for Windows compatibility, JSON output, auditability, resource requirements, licensing, and whether they analyze compiled APK evidence rather than requiring the unavailable original source project.
 
+### Decision: MobSF
+
+MobSF (Mobile Security Framework) is the selected primary scanner. It is an open-source, GPL-3.0 mobile security framework that accepts compiled Android APK files, performs static analysis, and exposes REST endpoints for automation and JSON report retrieval.
+
+The Web and Mobile responsibilities now map as follows:
+
+| Responsibility | Web pipeline | Mobile SAST pipeline |
+|---|---|---|
+| Primary static scanner | Semgrep | MobSF Static Analyzer |
+| Human-readable code inspection | Original source | JADX decompilation |
+| Package/manifest extraction | Not normally required | Apktool or MobSF extraction |
+| Dynamic testing | ZAP | Deferred; not part of Phase 3 |
+| Evidence assessor | Qwen/OpenAI according to web design | OpenAI GPT-5.4 Nano |
+| Independent reviewer | OpenAI | Separate OpenAI GPT-5.4 Nano pass |
+
+MobSF was selected because it understands Android-specific evidence that a general source scanner does not fully model: the manifest, permissions, exported components, signing certificates, network-security configuration, WebView behavior, insecure storage patterns, weak cryptography, hardcoded values, native libraries, and application metadata.
+
+### Why LongCat was not selected as the scanner
+
+LongCat is a general-purpose large language model for reasoning, coding, and agentic work. It is not an APK parser or a deterministic Android security scanner. An LLM may assess evidence after scanning, but it should not replace the evidence-producing scanner. This project therefore uses MobSF to produce findings and structured evidence, followed by explicitly separated AI assessment and review passes.
+
+Supervisor explanation:
+
+> MobSF is the mobile equivalent of the scanner layer, while GPT is the reasoning layer. MobSF opens and understands the APK using Android-specific checks. The AI receives those traceable findings afterward and helps distinguish plausible vulnerabilities from noise. This separation makes the process more reproducible and auditable than asking an LLM to inspect an APK by itself.
+
+### Tool responsibilities and limitations
+
+- **MobSF:** primary automated APK static scanner and machine-readable evidence producer.
+- **JADX:** supporting tool for readable decompiled Java/Kotlin evidence and manual verification.
+- **Apktool:** supporting tool for decoded resources, manifest content, and Smali bytecode.
+- **OWASP MASVS/MASTG:** security requirements and testing guidance, not an executable scanner.
+- **LongCat or another LLM:** optional reasoning technology, not a replacement for MobSF.
+
+Automated findings remain candidates. MobSF may report configuration weaknesses, suspicious patterns, or informational observations that are not exploitable in DIVA's actual data flow. Conversely, decompilation can lose source-level names and exact original line mappings. Those limitations are why the raw report is preserved and later findings must retain their evidence and provenance.
+
+### Approved static-only API workflow
+
+```text
+POST /api/v1/upload
+  → POST /api/v1/scan
+  → POST /api/v1/report_json
+  → data/raw/mobsf.json (unchanged response bytes)
+  → data/raw/mobsf_scan.log (timestamps, hashes, statuses; never the API key)
+```
+
+The runner is deliberately limited to this workflow. It does not call MobSF dynamic-analysis endpoints, start an emulator, normalize findings, classify vulnerabilities, call OpenAI, or generate reports.
+
+### Local deployment decision
+
+The scanner runs locally. MobSF's hosted demonstration service is not the project pipeline because uploading a company or client APK to a third-party service would change the privacy boundary.
+
+Docker Desktop was initially installed because containers are MobSF's simplest documented deployment method. This Windows system is itself a virtual machine, however, and the host does not expose nested hardware virtualization. WSL 2 installed successfully, but Docker reported `Virtualization support not detected` and could not start its Linux engine. A Docker account, Docker reinstall, or guest-administrator command cannot add a CPU capability withheld by the VM host.
+
+Because host-level permission was unavailable, the verified solution was MobSF's officially supported native Windows installation. This keeps the static scanner inside the same VM without requiring a second Linux VM:
+
+```text
+Physical host
+  → Windows project VM
+      → CCPL FastAPI
+      → native MobSF on 127.0.0.1:8001
+```
+
+This workaround is suitable for Mobile SAST. MobSF correctly warns that dynamic analysis is unavailable without an emulator; that warning is expected because Mobile DAST is outside Phase 3.
+
+Configuration values are environment variables:
+
+```text
+MOBSF_URL=http://127.0.0.1:8000
+MOBSF_API_KEY=<local MobSF REST API key>
+```
+
+The API key is a local scanner credential. It must be placed in the process environment or an ignored `.env` file and must never be committed, printed in logs, or written into the learning guide.
+
+### Reproducible runner command
+
+After local MobSF is running:
+
+```powershell
+$env:MOBSF_URL = "http://127.0.0.1:8000"
+$env:MOBSF_API_KEY = "<key shown by the local MobSF instance>"
+.\.venv\Scripts\python.exe -m scanners.mobsf_runner `
+  targets\DIVA\DivaApplication.apk `
+  --output data\raw\mobsf.json `
+  --log data\raw\mobsf_scan.log
+```
+
+Success requires all of the following evidence:
+
+- the upload, static scan, and JSON-report requests return successful HTTP statuses;
+- `data/raw/mobsf.json` parses as a JSON object;
+- the raw response bytes are saved without normalization or rewriting;
+- the log records the DIVA APK SHA-256 and raw-report SHA-256;
+- the API key is absent from output and logs;
+- no dynamic-analysis endpoint is called.
+
 ## Next controlled step
 
-Select and establish the minimum Mobile SAST toolchain, then produce one genuine machine-readable finding before building normalization or either OpenAI pass.
+Inspect the genuine MobSF schema and design the Mobile SAST normalizer without changing the preserved raw report. Do not start either OpenAI pass until normalized evidence has focused tests and traceability back to the raw MobSF sections.
+
+## Step 3 — Dual APK input workflow
+
+Status: **Implemented; genuine MobSF runtime verification pending**
+
+The Mobile SAST interface supports two input modes:
+
+1. **Existing target:** select an APK already stored below `targets/`, such as `DIVA/DivaApplication.apk`.
+2. **Browser upload:** choose an APK from the user's computer and upload it once to CCPL temporary storage.
+
+Both modes converge on the same scanner function:
+
+```text
+Existing target APK ───────────────┐
+                                  ├─→ CCPL backend → MobSF REST API → raw JSON
+Browser → temporary APK + token ──┘
+```
+
+The user never uploads the APK manually in MobSF. For browser mode, FastAPI receives the file, returns an opaque UUID token, and the scan stream uses that token to locate the temporary file. The backend then forwards the APK to MobSF automatically and removes the temporary upload after the scan attempt, including when MobSF returns an error.
+
+### Security controls
+
+- Only `.apk` filenames are accepted.
+- The uploaded content must begin as an APK/ZIP container.
+- Upload size is limited to 200 MB.
+- Uploaded filenames are never used as server paths; storage uses a random UUID.
+- Target references are resolved below `targets/` and directory traversal is rejected.
+- Absolute server paths and the MobSF API key are never sent to the browser.
+- Mobile scans use a lock so only one resource-intensive MobSF scan runs at a time.
+
+This step wires only the MobSF scanner stage. Until a genuine raw MobSF report has been inspected, the interface clearly states that normalization and AI review remain deferred rather than displaying invented vulnerability counts.
+
+## Step 4 — Native MobSF installation and first genuine scan
+
+Status: **Complete and verified on 2026-08-17**
+
+### Verified environment
+
+```text
+Operating system: Windows Server 2025 VM
+CPU allocation: 12 virtual processors
+Memory: 16 GB
+Python: 3.12.10
+MobSF: 4.5.2
+Java: Microsoft OpenJDK 17.0.20
+MobSF bind address: 127.0.0.1:8001
+MobSF source location: C:\MobSF
+MobSF source commit: 3f48c5deb57e5df4c6a507d111da956fcdd535d1
+```
+
+Native prerequisites established:
+
+- Full Win64 OpenSSL 4.0.1 at MobSF's expected location.
+- Visual Studio 2022 Build Tools with the C++ x64/x86 workload.
+- Microsoft OpenJDK 17 with `JAVA_HOME` registered.
+- Poetry 1.8.4 and MobSF's locked runtime dependencies.
+- MobSF SQLite migrations, local user, and authorization roles.
+
+The MobSF API credential was generated locally. Its value is intentionally excluded from this guide, Git, CCPL logs, and frontend responses.
+
+### Installation troubleshooting record
+
+1. Docker could not start because nested virtualization was not exposed to the Windows VM. The architecture changed to native MobSF rather than repeatedly reinstalling Docker.
+2. WinGet could not download the Visual Studio bootstrapper and returned `0x80072efd`. The same official Microsoft URL was downloaded with resumable `curl` retries, then the required C++ workload was verified using `vswhere`.
+3. Slow package downloads exceeded command execution windows. Poetry installation was safely resumed because it is idempotent and uses cached packages; persistent stdout/stderr logs were used for observation.
+4. MobSF initially reported that JDK 8+ was unavailable. Java 17 was already installed, but `JAVA_HOME` was missing from the child process. Registering and explicitly passing `JAVA_HOME` resolved the check.
+5. Database migration succeeded, but the first superuser command lost an empty email argument in PowerShell. Re-running only that unfinished command with a local placeholder email completed user and role creation.
+
+These were installation/integration conditions, not vulnerability-scan findings.
+
+### Genuine DIVA scan evidence
+
+The approved DIVA APK was submitted automatically through the local MobSF REST API. All three scanner requests succeeded:
+
+```text
+Upload HTTP status: 200
+Static scan HTTP status: 200
+JSON report HTTP status: 200
+APK SHA-256: 5cefc51fce9bd760b92ab2340477f4dda84b4ae0c5d04a8c9493e4fe34fab7c5
+Raw JSON size: 114,216 bytes
+Raw JSON SHA-256: 8addfa97267ce9c83c2571db6d13030bb8eed1813f5b29728c314d4a447bcc10
+Raw report: data/raw/mobsf.json
+Audit log: data/raw/mobsf_scan.log
+```
+
+JSON validation identified the application as `Diva` with package `jakhar.aseem.diva`. After verified JADX decompilation, MobSF produced a security score of 42 and the following high-level scanner observations:
+
+- five manifest findings: one high and four warnings;
+- five code findings: one high, three warnings, and one informational;
+- two certificate findings: one high and one informational;
+- three declared permissions, including two critical/dangerous permission observations;
+- two exported activities and one exported content provider;
+- fourteen binary-analysis records.
+
+Examples include a debug certificate, an enabled debug flag, backup permission, exported Android components, and external-storage permissions. These are **candidate observations**, not confirmed vulnerabilities. The assessor and reviewer have not evaluated them yet.
+
+### Decompiler failure discovered and corrected
+
+The first otherwise-successful API scan produced an empty `code_analysis` section. Server-log inspection proved that this was not an expected DIVA result: the first-time setup had been interrupted while downloading JADX, so `jadx.bat` did not exist.
+
+After the official JADX 1.5.0 archive was downloaded and extracted, MobSF initially rejected the new executable with `Executable/Library Tampering Detected`. This was MobSF's intended integrity protection: its executable hash map had been created before JADX existed. The protection was not disabled. MobSF was restarted so it could hash the completed official toolset, then the identical APK was submitted with `re_scan=1` to bypass the cached incomplete report.
+
+The final server log confirms this sequence without an error:
+
+```text
+Decompiling APK to Java with JADX
+Code Analysis Started on - java_source
+Android SAST Completed
+```
+
+The final raw report contains five code findings. This illustrates why HTTP 200 and valid JSON alone are insufficient scan-quality checks: key scanner stages and expected evidence sections must also be validated.
+
+### Supervisor explanation
+
+> Docker could not operate because our Windows development system is already a VM and the host does not permit virtualization inside it. We used MobSF's supported native Windows deployment instead. The scanner now runs locally, the DIVA APK was scanned through the automated API, and the unchanged JSON plus cryptographic hashes were preserved. The scanner produced genuine candidate findings, but AI confirmation has deliberately not started until the raw mobile schema and missing code-analysis section are understood.

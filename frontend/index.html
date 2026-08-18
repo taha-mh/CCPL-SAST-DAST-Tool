@@ -43,7 +43,31 @@
                         <select id="pipeline-select" class="form-input">
                             <option value="web_sast">🛡️ Web SAST (Static Code Analysis)</option>
                             <option value="web_dast">🌐 Web DAST (Dynamic HTTP Testing)</option>
+                            <option value="mobile_sast">📱 Mobile SAST (APK Analysis with MobSF)</option>
                         </select>
+                    </div>
+
+                    <div id="mobile-apk-controls" class="hidden">
+                        <div class="form-group">
+                            <label for="apk-source-select">APK Source:</label>
+                            <select id="apk-source-select" class="form-input">
+                                <option value="target">Use APK already in targets/</option>
+                                <option value="upload">Upload APK from this computer</option>
+                            </select>
+                        </div>
+
+                        <div class="form-group" id="target-apk-group">
+                            <label for="target-apk-select">Available Target APK:</label>
+                            <select id="target-apk-select" class="form-input">
+                                <option value="">Loading APK files...</option>
+                            </select>
+                        </div>
+
+                        <div class="form-group hidden" id="upload-apk-group">
+                            <label for="apk-file-input">Choose APK File:</label>
+                            <input type="file" id="apk-file-input" class="form-input" accept=".apk,application/vnd.android.package-archive">
+                            <small>The APK is uploaded once to CCPL, forwarded automatically to MobSF, then removed from temporary storage.</small>
+                        </div>
                     </div>
 
                     <div class="form-group" id="target-select-group">

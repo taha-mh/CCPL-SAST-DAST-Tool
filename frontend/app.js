@@ -14,6 +14,7 @@ let activeTab = 'confirmed'; // 'confirmed', 'discarded', 'all'
 
 document.addEventListener('DOMContentLoaded', () => {
     fetchTargets();
+    fetchMobileApks();
 
     const scanBtn = document.getElementById('scan-btn');
     if (scanBtn) {
@@ -24,17 +25,27 @@ document.addEventListener('DOMContentLoaded', () => {
     if (pipelineSelect) {
         pipelineSelect.addEventListener('change', (e) => {
             const isDast = e.target.value === 'web_dast';
+            const isMobile = e.target.value === 'mobile_sast';
             const targetGroup = document.getElementById('target-select-group');
             const patternGroup = document.getElementById('include-pattern-group');
-            if (isDast) {
+            const mobileControls = document.getElementById('mobile-apk-controls');
+            if (isDast || isMobile) {
                 if (targetGroup) targetGroup.classList.add('hidden');
                 if (patternGroup) patternGroup.classList.add('hidden');
             } else {
                 if (targetGroup) targetGroup.classList.remove('hidden');
                 if (patternGroup) patternGroup.classList.remove('hidden');
             }
+            if (mobileControls) mobileControls.classList.toggle('hidden', !isMobile);
+            updatePipelineLabels(isMobile);
         });
     }
+
+    document.getElementById('apk-source-select')?.addEventListener('change', (event) => {
+        const uploadMode = event.target.value === 'upload';
+        document.getElementById('target-apk-group')?.classList.toggle('hidden', uploadMode);
+        document.getElementById('upload-apk-group')?.classList.toggle('hidden', !uploadMode);
+    });
 
     // Attach Tab Switch Handlers
     document.getElementById('tab-confirmed-btn').addEventListener('click', () => setTab('confirmed'));
@@ -69,15 +80,48 @@ async function fetchTargets() {
     }
 }
 
+async function fetchMobileApks() {
+    const select = document.getElementById('target-apk-select');
+    try {
+        const response = await fetch('/api/mobile/apks');
+        if (!response.ok) throw new Error(`HTTP ${response.status}`);
+        const data = await response.json();
+        select.innerHTML = '';
+        if (!data.apks?.length) {
+            select.innerHTML = '<option value="">No APK files found under targets/</option>';
+            return;
+        }
+        data.apks.forEach(apk => {
+            const option = document.createElement('option');
+            option.value = apk.reference;
+            option.textContent = `${apk.reference} (${(apk.size_bytes / 1024 / 1024).toFixed(2)} MB)`;
+            select.appendChild(option);
+        });
+    } catch (error) {
+        console.error('Failed to fetch target APK files:', error);
+        select.innerHTML = '<option value="">Unable to load target APKs</option>';
+    }
+}
+
+function updatePipelineLabels(isMobile) {
+    const labels = document.querySelectorAll('#pipeline-pathway .step-label');
+    const values = isMobile
+        ? ['MobSF Scan', 'Normalizing', 'APK Evidence', 'AI Assessor (Pass 1)', 'AI Reviewer (Pass 2)', 'Report Generator']
+        : ['Semgrep Scan', 'Normalizing', 'Source Context', 'AI Assessor (Pass 1)', 'AI Reviewer (Pass 2)', 'Report Generator'];
+    labels.forEach((label, index) => { label.textContent = values[index]; });
+}
+
 
 /**
  * Handles "Start SAST Scan" button click, connects to SSE stream GET /api/scan/stream.
  */
-function handleScanSubmit() {
+async function handleScanSubmit() {
     const pipeline = document.getElementById('pipeline-select').value || 'web_sast';
     const targetName = document.getElementById('target-select').value || 'DVWA';
     const scanMode = document.getElementById('scan-mode').value;
     const includePattern = document.getElementById('include-pattern').value || '*.php';
+    let apkSource = '';
+    let apkReference = '';
 
     // UI Elements
     const scanBtn = document.getElementById('scan-btn');
@@ -100,8 +144,43 @@ function handleScanSubmit() {
     scanBtn.disabled = true;
     scanBtn.innerHTML = '<span>⏳</span><span>Scanning Target...</span>';
 
+    if (pipeline === 'mobile_sast') {
+        apkSource = document.getElementById('apk-source-select').value;
+        if (apkSource === 'target') {
+            apkReference = document.getElementById('target-apk-select').value;
+            if (!apkReference) {
+                restoreScanButton('Select an APK from targets/ first.');
+                return;
+            }
+        } else {
+            const file = document.getElementById('apk-file-input').files[0];
+            if (!file) {
+                restoreScanButton('Choose an APK file first.');
+                return;
+            }
+            appendConsoleLog(new Date().toLocaleTimeString(), 'Uploading APK securely to the CCPL backend...', 'info');
+            const formData = new FormData();
+            formData.append('file', file);
+            try {
+                const uploadResponse = await fetch('/api/mobile/apks/upload', { method: 'POST', body: formData });
+                const uploadData = await uploadResponse.json();
+                if (!uploadResponse.ok) throw new Error(uploadData.detail || `Upload failed: HTTP ${uploadResponse.status}`);
+                apkReference = uploadData.token;
+                appendConsoleLog(new Date().toLocaleTimeString(), `APK uploaded: ${uploadData.filename}`, 'success');
+            } catch (error) {
+                restoreScanButton(error.message);
+                return;
+            }
+        }
+    }
+
     // Build SSE URL
-    const streamUrl = `/api/scan/stream?target_name=${encodeURIComponent(targetName)}&max_findings=${encodeURIComponent(scanMode)}&include_pattern=${encodeURIComponent(includePattern)}&pipeline=${encodeURIComponent(pipeline)}`;
+    const params = new URLSearchParams({ target_name: targetName, max_findings: scanMode, include_pattern: includePattern, pipeline });
+    if (pipeline === 'mobile_sast') {
+        params.set('apk_source', apkSource);
+        params.set('apk_reference', apkReference);
+    }
+    const streamUrl = `/api/scan/stream?${params.toString()}`;
     const eventSource = new EventSource(streamUrl);
 
     eventSource.onmessage = (event) => {
@@ -136,6 +215,14 @@ function handleScanSubmit() {
         scanBtn.innerHTML = '<span>⚡</span><span>Start SAST Scan</span>';
         appendConsoleLog(new Date().toLocaleTimeString(), '❌ Connection to scan pipeline stream lost.', 'error');
     };
+}
+
+function restoreScanButton(errorMessage) {
+    document.getElementById('spinner-container')?.classList.add('hidden');
+    const button = document.getElementById('scan-btn');
+    button.disabled = false;
+    button.innerHTML = '<span>⚡</span><span>Start Scan Pipeline</span>';
+    appendConsoleLog(new Date().toLocaleTimeString(), `❌ ${errorMessage}`, 'error');
 }
 
 

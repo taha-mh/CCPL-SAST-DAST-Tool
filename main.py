@@ -12,11 +12,15 @@ Responsibility:
 import asyncio
 import json
 import logging
+import os
+import shutil
+import uuid
 from datetime import datetime
 from pathlib import Path
 from typing import Optional
 
-from fastapi import FastAPI, HTTPException, Query
+import httpx
+from fastapi import FastAPI, File, HTTPException, Query, UploadFile
 from fastapi.responses import FileResponse, StreamingResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, Field
@@ -26,6 +30,7 @@ from scanners.semgrep_runner import run_semgrep_scan
 from parsers.semgrep_normalizer import normalize_semgrep_findings
 from parsers.source_context import extract_source_context
 from scanners.dast_runner import run_dast_scan
+from scanners.mobsf_runner import run_static_scan as run_mobsf_static_scan
 from parsers.dast_normalizer import normalize_dast_findings
 from llm.assessor import run_llm_assessor
 from llm.reviewer import run_llm_reviewer
@@ -47,6 +52,55 @@ BASE_DIR = Path(__file__).resolve().parent
 TARGETS_DIR = BASE_DIR / "targets"
 REPORTS_DIR = BASE_DIR / "reports"
 FRONTEND_DIR = BASE_DIR / "frontend"
+UPLOADS_DIR = BASE_DIR / "data" / "uploads"
+RAW_DIR = BASE_DIR / "data" / "raw"
+MAX_APK_BYTES = 200 * 1024 * 1024
+MOBILE_SCAN_LOCK = asyncio.Lock()
+
+
+def _is_within(path: Path, parent: Path) -> bool:
+    try:
+        path.relative_to(parent)
+        return True
+    except ValueError:
+        return False
+
+
+def list_target_apks() -> list[dict[str, object]]:
+    """List APKs under targets/ without exposing absolute server paths."""
+    if not TARGETS_DIR.exists():
+        return []
+    apks = []
+    for path in sorted(TARGETS_DIR.rglob("*.apk")):
+        if path.is_file():
+            apks.append({
+                "reference": path.relative_to(TARGETS_DIR).as_posix(),
+                "name": path.name,
+                "size_bytes": path.stat().st_size,
+            })
+    return apks
+
+
+def resolve_mobile_apk(source: str, reference: str) -> Path:
+    """Resolve an opaque upload token or safe targets-relative APK reference."""
+    if source == "target":
+        candidate = (TARGETS_DIR / reference).resolve()
+        allowed_root = TARGETS_DIR.resolve()
+    elif source == "upload":
+        try:
+            token = uuid.UUID(reference)
+        except ValueError as exc:
+            raise ValueError("Invalid uploaded APK token") from exc
+        candidate = (UPLOADS_DIR / f"{token}.apk").resolve()
+        allowed_root = UPLOADS_DIR.resolve()
+    else:
+        raise ValueError("APK source must be 'target' or 'upload'")
+
+    if not _is_within(candidate, allowed_root):
+        raise ValueError("APK path escapes the allowed directory")
+    if candidate.suffix.lower() != ".apk" or not candidate.is_file():
+        raise FileNotFoundError("Selected APK was not found")
+    return candidate
 
 
 # --- Pydantic Data Models ---
@@ -72,18 +126,56 @@ def list_targets():
     return {"targets": sorted(targets)}
 
 
+@app.get("/api/mobile/apks", summary="List APK files already available under targets/")
+def list_mobile_apks():
+    return {"apks": list_target_apks()}
+
+
+@app.post("/api/mobile/apks/upload", summary="Temporarily upload one APK for Mobile SAST")
+async def upload_mobile_apk(file: UploadFile = File(...)):
+    original_name = Path(file.filename or "").name
+    if not original_name.lower().endswith(".apk"):
+        raise HTTPException(status_code=400, detail="Only .apk files are accepted")
+
+    UPLOADS_DIR.mkdir(parents=True, exist_ok=True)
+    token = uuid.uuid4()
+    destination = UPLOADS_DIR / f"{token}.apk"
+    size = 0
+    first_bytes = b""
+    try:
+        with destination.open("wb") as output:
+            while chunk := await file.read(1024 * 1024):
+                if not first_bytes:
+                    first_bytes = chunk[:4]
+                size += len(chunk)
+                if size > MAX_APK_BYTES:
+                    raise HTTPException(status_code=413, detail="APK exceeds the 200 MB limit")
+                output.write(chunk)
+        if size == 0 or not first_bytes.startswith(b"PK"):
+            raise HTTPException(status_code=400, detail="The uploaded file is not a valid APK/ZIP container")
+    except Exception:
+        destination.unlink(missing_ok=True)
+        raise
+    finally:
+        await file.close()
+
+    return {"token": str(token), "filename": original_name, "size_bytes": size}
+
+
 @app.get("/api/scan/stream", summary="Stream full 6-step SAST/DAST Scan Pipeline with real-time logs")
 async def stream_sast_scan(
     target_name: str = Query(default="DVWA"),
     max_findings: Optional[str] = Query(default="3"),
     include_pattern: Optional[str] = Query(default="*.php"),
     pipeline: Optional[str] = Query(default="web_sast"),
+    apk_source: Optional[str] = Query(default=None),
+    apk_reference: Optional[str] = Query(default=None),
 ):
     """
     Streams real-time logs for the 6-step SAST pipeline to the frontend via Server-Sent Events (SSE).
     """
     target_path = TARGETS_DIR / target_name
-    if not target_path.exists() or not target_path.is_dir():
+    if pipeline != "mobile_sast" and (not target_path.exists() or not target_path.is_dir()):
         async def error_generator():
             yield f"data: {json.dumps({'type': 'error', 'message': f'Target directory {target_name} not found'})}\n\n"
         return StreamingResponse(error_generator(), media_type="text/event-stream")
@@ -105,7 +197,36 @@ async def stream_sast_scan(
                 }
                 return f"data: {json.dumps(payload)}\n\n"
 
-            if pipeline == "web_dast":
+            if pipeline == "mobile_sast":
+                if not apk_source or not apk_reference:
+                    raise ValueError("Choose an uploaded APK or an APK from targets/")
+                apk_path = resolve_mobile_apk(apk_source, apk_reference)
+                try:
+                    yield log("start", f"Starting Mobile SAST for {apk_path.name}...", active_step="scanner")
+                    yield log("scanner", "[Step 1/6] Sending the APK to the local MobSF static-analysis API...", active_step="scanner")
+
+                    async with MOBILE_SCAN_LOCK:
+                        scan_task = asyncio.create_task(asyncio.to_thread(
+                            run_mobsf_static_scan,
+                            apk_path,
+                            RAW_DIR / "mobsf.json",
+                            RAW_DIR / "mobsf_scan.log",
+                            base_url=os.getenv("MOBSF_URL", "http://127.0.0.1:8001"),
+                            api_key=os.getenv("MOBSF_API_KEY", ""),
+                        ))
+                        while not scan_task.done():
+                            yield ": keep-alive\n\n"
+                            await asyncio.sleep(10)
+                        audit = await scan_task
+
+                    yield log("scanner", "MobSF static analysis completed and the raw JSON was validated.", active_step="normalizer")
+                    yield log("normalizer", "Normalization and AI review are intentionally deferred until the genuine MobSF schema is verified.", level="warning", active_step="normalizer")
+                    yield f"data: {json.dumps({'type': 'result', 'status': 'scanner_complete', 'target': apk_path.name, 'total_evaluated': 0, 'confirmed_vulnerabilities': 0, 'discarded_false_positives': 0, 'reviewed_findings': [], 'audit': audit, 'reports': {}})}\n\n"
+                finally:
+                    if apk_source == "upload":
+                        apk_path.unlink(missing_ok=True)
+
+            elif pipeline == "web_dast":
                 yield log("start", f"🚀 Starting DAST Scan Pipeline for Target: http://127.0.0.1:8085...", active_step="scanner")
                 await asyncio.sleep(0.3)
 

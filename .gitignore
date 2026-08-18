@@ -49,6 +49,8 @@ data/raw/*
 !data/raw/.gitkeep
 data/normalized/*
 !data/normalized/.gitkeep
+data/uploads/*
+!data/uploads/.gitkeep
 
 # Generated reports
 reports/*.html
