@@ -37,8 +37,8 @@ To clone this repository onto your local device:
 [Doc 6] HANDOVER_GUIDE.md
 - Description: Complete project execution commands, directory map, and security rules.
 
-[Doc 7] CODE_ARCHITECTURE_DIAGRAMS.md
-- Description: GitHub Mermaid live rendered architecture flowcharts for Phase 1 (Ollama SAST) and Phase 2 (OpenAI DAST + Routers).
+[Doc 7] PIPELINE_SEQUENCE_DIAGRAMS.md
+- Description: GitHub Mermaid live rendered sequence diagrams showing step-by-step execution for Phase 1 (Web SAST) and Phase 2 (Web DAST + ZAP + OpenAI).
 
 [Doc 8] architecture diagram.png & flow chart.png & 08_Editable_Architecture.drawio
 - Description: Architecture diagrams and flowchart graphics.
