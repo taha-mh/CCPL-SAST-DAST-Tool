@@ -1,0 +1,43 @@
+================================================================================
+CCPL SAST & DAST SECURITY ANALYSIS TOOL - DOCUMENTATION INDEX & REPOSITORY GUIDE
+================================================================================
+
+1. GITHUB REPOSITORY LINK & CLONE INSTRUCTIONS
+--------------------------------------------------------------------------------
+GitHub Repository: https://github.com/taha-mh/CCPL-SAST-DAST-Tool.git
+
+To clone this repository onto your local device:
+    git clone https://github.com/taha-mh/CCPL-SAST-DAST-Tool.git
+    cd CCPL-SAST-DAST-Tool
+
+
+2. CORE DOCUMENTATION OVERVIEW
+--------------------------------------------------------------------------------
+
+[Doc 1] SAST_DAST_Tool_Requirements.docx
+- Description: Initial product requirements and scope document shared by Shehryar Bhai.
+- Content: High-level vision for building a hybrid SAST and DAST security testing tool.
+
+[Doc 2] SAST_DAS_Tool intro doc.pdf / SAST_DAS_Tool intro doc.docx
+- Description: Initial architecture design document created after analyzing project requirements.
+- Content: Early pipeline concepts, tool choices (Semgrep, OWASP ZAP), and initial flow diagrams.
+
+[Doc 3] SAST_DAST_Tool_intro_doc_v2.docx
+- Description: Version 2 intro design document with updated technical specifications.
+- Content: Updated specifications, dual-pass AI architecture details, and initial UI mockups.
+
+[Doc 4] Phase 1.docx
+- Description: Official Phase 1 Engineering & Implementation Report (Word Document).
+- Content: Full Web SAST vertical slice, Semgrep scanner integration, source code context extraction (+/- 10 lines), local Ollama (Qwen3) AI assessment & review, HTML/Markdown report generation, and initial FastAPI web interface.
+
+[Doc 5] Phase 2.docx
+- Description: Official Phase 2 Engineering & Implementation Report (Word Document).
+- Content: Full Web DAST vertical slice (OWASP ZAP live target testing on DVWA), zero-network-call HTTP evidence normalizer (using zap.core.message to extract response headers in 18ms), migration from local Ollama to centralized OpenAI API (gpt-5.4-nano), 3-state verdict classification (confirmed, rejected, needs_review), refactored FastAPI modular routers (main.py reduced to 58 lines with routers/targets.py, routers/reports.py, routers/scan.py), clean emoji-free UI with clickable stat cards, and 0.17s automated regression test suite.
+
+[Doc 6] HANDOVER_GUIDE.md
+- Description: Complete project execution commands, directory map, and security rules.
+
+[Doc 7] architecture diagram.png & flow chart.png & 08_Editable_Architecture.drawio
+- Description: Architecture diagrams and flowchart graphics.
+
+================================================================================
