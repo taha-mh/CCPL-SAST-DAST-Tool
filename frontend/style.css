@@ -295,6 +295,15 @@ label {
     font-weight: 700;
 }
 
+/* Category Overlay View Header */
+.category-view-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding-bottom: 1rem;
+    border-bottom: 1px solid var(--card-border);
+}
+
 /* Filter Tabs Bar - Fixed Overflow & Width Containment */
 .tab-navigation {
     display: flex;

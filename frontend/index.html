@@ -22,10 +22,6 @@
                     <p class="subtitle">Automated AI-Assisted SAST and DAST Pipeline</p>
                 </div>
             </div>
-            <div class="engine-badge">
-                <span class="status-dot"></span>
-                <span>AI Engine: <strong>OpenAI (gpt-5.4-nano) / Dual-Pass</strong></span>
-            </div>
         </header>
 
         <!-- Main Dashboard Content -->
@@ -55,7 +51,7 @@
                     <div class="form-group">
                         <label for="scan-mode">Scan Execution Mode:</label>
                         <select id="scan-mode" class="form-input">
-                            <option value="3">Quick Demo Test (First 3 Findings)</option>
+                            <option value="10">Quick Demo Test (First 10 Findings)</option>
                             <option value="all">Full Comprehensive Scan (All Findings)</option>
                         </select>
                     </div>
@@ -65,7 +61,7 @@
                         <input type="text" id="include-pattern" class="form-input" value="*.php" placeholder="e.g. *.php or *.js">
                     </div>
 
-                    <button id="scan-btn" class="btn btn-primary">
+                    <button type="button" id="scan-btn" class="btn btn-primary">
                         <span id="btn-text">Start Scan Pipeline</span>
                     </button>
                 </form>
@@ -73,112 +69,111 @@
 
             <!-- Right Results & Statistics Panel -->
             <section class="results-panel">
-                <!-- Summary Metric Cards (Clickable for quick filtering) -->
-                <div class="stats-row">
-                    <div class="stat-card metric-evaluated" id="card-click-all" title="Click to view all evaluated findings">
-                        <span class="stat-label">Evaluated Findings</span>
-                        <span id="stat-total" class="stat-value text-blue">0</span>
-                    </div>
-                    <div class="stat-card metric-confirmed" id="card-click-confirmed" title="Click to view confirmed risks">
-                        <span class="stat-label">Confirmed Risks</span>
-                        <span id="stat-confirmed" class="stat-value text-red">0</span>
-                    </div>
-                    <div class="stat-card metric-discarded" id="card-click-discarded" title="Click to view false positives">
-                        <span class="stat-label">False Positives</span>
-                        <span id="stat-discarded" class="stat-value text-green">0</span>
-                    </div>
-                    <div class="stat-card metric-needs-review" id="card-click-needs-review" title="Click to view findings requiring verification">
-                        <span class="stat-label">Requires Verification</span>
-                        <span id="stat-needs-review" class="stat-value text-yellow">0</span>
-                    </div>
-                </div>
-
-                <!-- Active Scan Central Processing Panel -->
-                <div id="processing-panel" class="card processing-card">
-                    <!-- Circular Blue Loading Spinner -->
-                    <div id="spinner-container" class="spinner-group hidden">
-                        <div class="blue-spinner"></div>
-                        <h3 id="status-title">Executing Scan Pipeline...</h3>
+                <!-- Main Summary View Container -->
+                <div id="main-summary-view">
+                    <!-- Interactive Summary Metric Cards -->
+                    <div class="stats-row">
+                        <div class="stat-card metric-evaluated" id="card-click-all" title="Click to view all evaluated findings">
+                            <span class="stat-label">Evaluated Findings</span>
+                            <span id="stat-total" class="stat-value text-blue">0</span>
+                        </div>
+                        <div class="stat-card metric-confirmed" id="card-click-confirmed" title="Click to view confirmed risks">
+                            <span class="stat-label">Confirmed Risks</span>
+                            <span id="stat-confirmed" class="stat-value text-red">0</span>
+                        </div>
+                        <div class="stat-card metric-discarded" id="card-click-discarded" title="Click to view false positives">
+                            <span class="stat-label">False Positives</span>
+                            <span id="stat-discarded" class="stat-value text-green">0</span>
+                        </div>
+                        <div class="stat-card metric-needs-review" id="card-click-needs-review" title="Click to view findings requiring verification">
+                            <span class="stat-label">Requires Verification</span>
+                            <span id="stat-needs-review" class="stat-value text-yellow">0</span>
+                        </div>
                     </div>
 
-                    <!-- Live Real-Time Console Terminal Log Box -->
-                    <div id="console-wrapper" class="console-wrapper hidden">
-                        <div class="console-header">
-                            <span class="console-dot red"></span>
-                            <span class="console-dot yellow"></span>
-                            <span class="console-dot green"></span>
-                            <span class="console-title">Live Pipeline Execution Logs</span>
+                    <!-- Active Scan Central Processing Panel -->
+                    <div id="processing-panel" class="card processing-card">
+                        <!-- Circular Blue Loading Spinner -->
+                        <div id="spinner-container" class="spinner-group hidden">
+                            <div class="blue-spinner"></div>
+                            <h3 id="status-title">Executing Scan Pipeline...</h3>
                         </div>
-                        <div id="console-output" class="console-output"></div>
+
+                        <!-- Live Real-Time Console Terminal Log Box -->
+                        <div id="console-wrapper" class="console-wrapper hidden">
+                            <div class="console-header">
+                                <span class="console-dot red"></span>
+                                <span class="console-dot yellow"></span>
+                                <span class="console-dot green"></span>
+                                <span class="console-title">Live Pipeline Execution Logs</span>
+                            </div>
+                            <div id="console-output" class="console-output"></div>
+                        </div>
+
+                        <!-- Clean 6-Step Pipeline Pathway Bar -->
+                        <div id="pipeline-pathway" class="pipeline-pathway">
+                            <div class="step-item" id="step-scanner">
+                                <span class="step-num">1</span>
+                                <span class="step-label" id="scanner-step-label">Semgrep Scan</span>
+                            </div>
+                            <span class="arrow">➔</span>
+                            <div class="step-item" id="step-normalizer">
+                                <span class="step-num">2</span>
+                                <span class="step-label">Normalizing</span>
+                            </div>
+                            <span class="arrow">➔</span>
+                            <div class="step-item" id="step-context">
+                                <span class="step-num">3</span>
+                                <span class="step-label">Context Extraction</span>
+                            </div>
+                            <span class="arrow">➔</span>
+                            <div class="step-item" id="step-assessor">
+                                <span class="step-num">4</span>
+                                <span class="step-label">AI Assessor</span>
+                            </div>
+                            <span class="arrow">➔</span>
+                            <div class="step-item" id="step-reviewer">
+                                <span class="step-num">5</span>
+                                <span class="step-label">AI Reviewer</span>
+                            </div>
+                            <span class="arrow">➔</span>
+                            <div class="step-item" id="step-reports">
+                                <span class="step-num">6</span>
+                                <span class="step-label">Report Generator</span>
+                            </div>
+                        </div>
                     </div>
 
-                    <!-- Clean 6-Step Pipeline Pathway Bar -->
-                    <div id="pipeline-pathway" class="pipeline-pathway">
-                        <div class="step-item" id="step-scanner">
-                            <span class="step-num">1</span>
-                            <span class="step-label" id="scanner-step-label">Semgrep Scan</span>
-                        </div>
-                        <span class="arrow">➔</span>
-                        <div class="step-item" id="step-normalizer">
-                            <span class="step-num">2</span>
-                            <span class="step-label">Normalizing</span>
-                        </div>
-                        <span class="arrow">➔</span>
-                        <div class="step-item" id="step-context">
-                            <span class="step-num">3</span>
-                            <span class="step-label">Context Extraction</span>
-                        </div>
-                        <span class="arrow">➔</span>
-                        <div class="step-item" id="step-assessor">
-                            <span class="step-num">4</span>
-                            <span class="step-label">AI Assessor</span>
-                        </div>
-                        <span class="arrow">➔</span>
-                        <div class="step-item" id="step-reviewer">
-                            <span class="step-num">5</span>
-                            <span class="step-label">AI Reviewer</span>
-                        </div>
-                        <span class="arrow">➔</span>
-                        <div class="step-item" id="step-reports">
-                            <span class="step-num">6</span>
-                            <span class="step-label">Report Generator</span>
-                        </div>
-                    </div>
-                </div>
-
-                <!-- Interactive Filter Tabs Bar -->
-                <div id="tab-navigation" class="tab-navigation hidden">
-                    <button class="tab-btn active" id="tab-confirmed-btn">
-                        Confirmed Risks (<span id="tab-confirmed-count">0</span>)
-                    </button>
-                    <button class="tab-btn" id="tab-discarded-btn">
-                        False Positives (<span id="tab-discarded-count">0</span>)
-                    </button>
-                    <button class="tab-btn" id="tab-needs-review-btn">
-                        Requires Verification (<span id="tab-needs-review-count">0</span>)
-                    </button>
-                    <button class="tab-btn" id="tab-all-btn">
-                        All Evaluated (<span id="tab-all-count">0</span>)
-                    </button>
-                </div>
-
-                <!-- Report Action Bar (Download Options) -->
-                <div id="report-actions" class="card actions-card hidden">
-                    <div class="actions-header">
-                        <h3>Download Security Reports</h3>
-                        <div class="button-group">
-                            <a id="download-html-btn" href="/api/reports/html" target="_blank" class="btn btn-secondary">
-                                Open HTML Report
-                            </a>
-                            <a id="download-md-btn" href="/api/reports/md" download class="btn btn-secondary">
-                                Download Markdown
-                            </a>
+                    <!-- Clean Report Action Bar (Download Options Only) -->
+                    <div id="report-actions" class="card actions-card hidden">
+                        <div class="actions-header">
+                            <h3>Download Security Reports</h3>
+                            <div class="button-group">
+                                <a id="download-html-btn" href="/api/reports/html" target="_blank" class="btn btn-secondary">
+                                    Open HTML Report
+                                </a>
+                                <a id="download-md-btn" href="/api/reports/md" download class="btn btn-secondary">
+                                    Download Markdown
+                                </a>
+                            </div>
                         </div>
                     </div>
                 </div>
 
-                <!-- Dynamic Findings List Container -->
-                <div id="findings-container" class="findings-feed"></div>
+                <!-- Category Overlay Findings View (Hidden by Default) -->
+                <div id="category-view" class="card hidden">
+                    <div class="category-view-header">
+                        <div class="category-title-group">
+                            <h2 id="category-view-title">Categorized Findings</h2>
+                            <p id="category-view-subtitle" class="subtitle">Filtered View</p>
+                        </div>
+                        <button type="button" id="back-to-summary-btn" class="btn btn-secondary">
+                            Back to Summary
+                        </button>
+                    </div>
+                    <!-- Filtered Findings Container -->
+                    <div id="category-findings-container" class="findings-feed" style="margin-top: 1.25rem;"></div>
+                </div>
             </section>
         </main>
     </div>

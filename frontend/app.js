@@ -1,16 +1,16 @@
 /**
- * CCPL Web Security Dashboard - Real-Time Streaming & Interactive Tab Logic
+ * CCPL Web Security Dashboard - Real-Time Streaming & Interactive Category View Logic
  *
  * Responsibilities:
  * 1. Fetch available target projects from GET /api/targets on page load.
  * 2. Connect to Server-Sent Events (SSE) stream GET /api/scan/stream on scan trigger.
  * 3. Stream real-time timestamped logs line-by-line into the live console window.
  * 4. Dynamically highlight active pipeline step indicators in the 6-step pathway bar.
- * 5. Support interactive Frontend Filter Tabs (Confirmed Risks vs False Positives vs Requires Verification vs All).
+ * 5. Support interactive Stat Card Category View ("Back to Summary" navigation).
  */
 
 let currentScanData = null;
-let activeTab = 'confirmed'; // 'confirmed', 'discarded', 'needs_review', 'all'
+let activeCategory = 'confirmed'; // 'confirmed', 'discarded', 'needs_review', 'all'
 
 document.addEventListener('DOMContentLoaded', () => {
     fetchTargets();
@@ -40,17 +40,22 @@ document.addEventListener('DOMContentLoaded', () => {
         });
     }
 
-    // Attach Tab Switch Handlers
-    document.getElementById('tab-confirmed-btn').addEventListener('click', () => setTab('confirmed'));
-    document.getElementById('tab-discarded-btn').addEventListener('click', () => setTab('discarded'));
-    document.getElementById('tab-needs-review-btn').addEventListener('click', () => setTab('needs_review'));
-    document.getElementById('tab-all-btn').addEventListener('click', () => setTab('all'));
+    // Attach Clickable Stat Card Category Navigation Handlers
+    const cardConfirmed = document.getElementById('card-click-confirmed');
+    if (cardConfirmed) cardConfirmed.addEventListener('click', () => openCategoryView('confirmed'));
 
-    // Attach Clickable Stat Card Navigation Handlers
-    document.getElementById('card-click-confirmed').addEventListener('click', () => setTab('confirmed'));
-    document.getElementById('card-click-discarded').addEventListener('click', () => setTab('discarded'));
-    document.getElementById('card-click-needs-review').addEventListener('click', () => setTab('needs_review'));
-    document.getElementById('card-click-all').addEventListener('click', () => setTab('all'));
+    const cardDiscarded = document.getElementById('card-click-discarded');
+    if (cardDiscarded) cardDiscarded.addEventListener('click', () => openCategoryView('discarded'));
+
+    const cardNeedsReview = document.getElementById('card-click-needs-review');
+    if (cardNeedsReview) cardNeedsReview.addEventListener('click', () => openCategoryView('needs_review'));
+
+    const cardAll = document.getElementById('card-click-all');
+    if (cardAll) cardAll.addEventListener('click', () => openCategoryView('all'));
+
+    // Attach Back to Summary Button Handler
+    const backBtn = document.getElementById('back-to-summary-btn');
+    if (backBtn) backBtn.addEventListener('click', closeCategoryView);
 });
 
 
@@ -59,6 +64,8 @@ document.addEventListener('DOMContentLoaded', () => {
  */
 async function fetchTargets() {
     const targetSelect = document.getElementById('target-select');
+    if (!targetSelect) return;
+
     try {
         const response = await fetch('/api/targets');
         const data = await response.json();
@@ -84,11 +91,18 @@ async function fetchTargets() {
 /**
  * Handles "Start Scan Pipeline" button click, connects to SSE stream GET /api/scan/stream.
  */
-function handleScanSubmit() {
-    const pipeline = document.getElementById('pipeline-select').value || 'web_sast';
-    const targetName = document.getElementById('target-select').value || 'DVWA';
-    const scanMode = document.getElementById('scan-mode').value;
-    const includePattern = document.getElementById('include-pattern').value || '*.php';
+function handleScanSubmit(e) {
+    if (e && e.preventDefault) e.preventDefault();
+
+    const pipelineSelect = document.getElementById('pipeline-select');
+    const targetSelect = document.getElementById('target-select');
+    const scanModeSelect = document.getElementById('scan-mode');
+    const patternInput = document.getElementById('include-pattern');
+
+    const pipeline = pipelineSelect ? pipelineSelect.value : 'web_sast';
+    const targetName = targetSelect ? targetSelect.value || 'DVWA' : 'DVWA';
+    const scanMode = scanModeSelect ? scanModeSelect.value : '10';
+    const includePattern = patternInput ? patternInput.value || '*.php' : '*.php';
 
     // UI Elements
     const scanBtn = document.getElementById('scan-btn');
@@ -96,20 +110,22 @@ function handleScanSubmit() {
     const consoleWrapper = document.getElementById('console-wrapper');
     const consoleOutput = document.getElementById('console-output');
     const reportActions = document.getElementById('report-actions');
-    const tabNavigation = document.getElementById('tab-navigation');
-    const findingsContainer = document.getElementById('findings-container');
+
+    // Make sure we are in summary view
+    closeCategoryView();
 
     // Reset UI state
-    spinnerGroup.classList.remove('hidden');
-    consoleWrapper.classList.remove('hidden');
-    consoleOutput.innerHTML = '';
-    reportActions.classList.add('hidden');
-    tabNavigation.classList.add('hidden');
-    findingsContainer.innerHTML = '';
+    if (spinnerGroup) spinnerGroup.classList.remove('hidden');
+    if (consoleWrapper) consoleWrapper.classList.remove('hidden');
+    if (consoleOutput) consoleOutput.innerHTML = '';
+    if (reportActions) reportActions.classList.add('hidden');
+    
     resetPipelineSteps();
 
-    scanBtn.disabled = true;
-    scanBtn.innerHTML = '<span>Scanning Target...</span>';
+    if (scanBtn) {
+        scanBtn.disabled = true;
+        scanBtn.innerHTML = '<span>Scanning Target...</span>';
+    }
 
     // Build SSE URL
     const streamUrl = `/api/scan/stream?target_name=${encodeURIComponent(targetName)}&max_findings=${encodeURIComponent(scanMode)}&include_pattern=${encodeURIComponent(includePattern)}&pipeline=${encodeURIComponent(pipeline)}`;
@@ -123,18 +139,22 @@ function handleScanSubmit() {
             updatePipelineStep(data.active_step);
         } else if (data.type === 'result') {
             eventSource.close();
-            spinnerGroup.classList.add('hidden');
-            scanBtn.disabled = false;
-            scanBtn.innerHTML = '<span>Start Scan Pipeline</span>';
+            if (spinnerGroup) spinnerGroup.classList.add('hidden');
+            if (scanBtn) {
+                scanBtn.disabled = false;
+                scanBtn.innerHTML = '<span>Start Scan Pipeline</span>';
+            }
             updatePipelineStep('done');
             
             currentScanData = data;
-            renderDashboard(data);
+            renderDashboardSummary(data);
         } else if (data.type === 'error') {
             eventSource.close();
-            spinnerGroup.classList.add('hidden');
-            scanBtn.disabled = false;
-            scanBtn.innerHTML = '<span>Start Scan Pipeline</span>';
+            if (spinnerGroup) spinnerGroup.classList.add('hidden');
+            if (scanBtn) {
+                scanBtn.disabled = false;
+                scanBtn.innerHTML = '<span>Start Scan Pipeline</span>';
+            }
             appendConsoleLog(new Date().toLocaleTimeString(), `Error: ${data.message}`, 'error');
         }
     };
@@ -142,9 +162,11 @@ function handleScanSubmit() {
     eventSource.onerror = (err) => {
         console.error('SSE Stream Error:', err);
         eventSource.close();
-        spinnerGroup.classList.add('hidden');
-        scanBtn.disabled = false;
-        scanBtn.innerHTML = '<span>Start Scan Pipeline</span>';
+        if (spinnerGroup) spinnerGroup.classList.add('hidden');
+        if (scanBtn) {
+            scanBtn.disabled = false;
+            scanBtn.innerHTML = '<span>Start Scan Pipeline</span>';
+        }
         appendConsoleLog(new Date().toLocaleTimeString(), 'Connection to scan pipeline stream lost.', 'error');
     };
 }
@@ -155,6 +177,8 @@ function handleScanSubmit() {
  */
 function appendConsoleLog(timestamp, message, level = 'info') {
     const consoleOutput = document.getElementById('console-output');
+    if (!consoleOutput) return;
+
     const line = document.createElement('div');
     line.className = `console-line ${level}`;
 
@@ -206,9 +230,9 @@ function updatePipelineStep(activeStep) {
 
 
 /**
- * Renders summary metrics, tab counters, and shows findings for active tab.
+ * Renders summary metrics and shows report actions bar.
  */
-function renderDashboard(data) {
+function renderDashboardSummary(data) {
     const allFindings = data.reviewed_findings || [];
     const total = data.total_evaluated || allFindings.length;
 
@@ -217,62 +241,98 @@ function renderDashboard(data) {
     const needsReview = data.requires_manual_verification || (total - confirmed - discarded);
 
     // Update metric numbers
-    document.getElementById('stat-total').textContent = total;
-    document.getElementById('stat-confirmed').textContent = confirmed;
-    document.getElementById('stat-discarded').textContent = discarded;
-    document.getElementById('stat-needs-review').textContent = needsReview;
+    const statTotal = document.getElementById('stat-total');
+    const statConfirmed = document.getElementById('stat-confirmed');
+    const statDiscarded = document.getElementById('stat-discarded');
+    const statNeedsReview = document.getElementById('stat-needs-review');
 
-    // Update Tab Counts
-    document.getElementById('tab-confirmed-count').textContent = confirmed;
-    document.getElementById('tab-discarded-count').textContent = discarded;
-    document.getElementById('tab-needs-review-count').textContent = needsReview;
-    document.getElementById('tab-all-count').textContent = total;
+    if (statTotal) statTotal.textContent = total;
+    if (statConfirmed) statConfirmed.textContent = confirmed;
+    if (statDiscarded) statDiscarded.textContent = discarded;
+    if (statNeedsReview) statNeedsReview.textContent = needsReview;
 
-    // Show Report Actions & Filter Tabs
-    document.getElementById('report-actions').classList.remove('hidden');
-    document.getElementById('tab-navigation').classList.remove('hidden');
-
-    renderActiveTabFindings();
+    // Show Report Actions Bar
+    const reportActions = document.getElementById('report-actions');
+    if (reportActions) reportActions.classList.remove('hidden');
 }
 
 
 /**
- * Sets active tab ('confirmed', 'discarded', 'needs_review', 'all') and re-renders findings.
+ * Opens Category Overlay View for a clicked stat card category.
  */
-function setTab(tabName) {
-    activeTab = tabName;
-    
-    document.querySelectorAll('.tab-btn').forEach(btn => btn.classList.remove('active'));
-    const btn = document.getElementById(`tab-${tabName}-btn`);
-    if (btn) btn.classList.add('active');
+function openCategoryView(categoryName) {
+    activeCategory = categoryName;
 
-    renderActiveTabFindings();
+    const categoryView = document.getElementById('category-view');
+    const titleEl = document.getElementById('category-view-title');
+    const subtitleEl = document.getElementById('category-view-subtitle');
+
+    if (!categoryView) return;
+
+    const categoryTitles = {
+        'confirmed': 'Confirmed Security Risks',
+        'discarded': 'Discarded False Positives',
+        'needs_review': 'Requires Manual Verification',
+        'all': 'All Evaluated Findings'
+    };
+
+    const categorySubtitles = {
+        'confirmed': 'Verified vulnerabilities backed by observable evidence context.',
+        'discarded': 'Scanner noise rejected by AI Reviewer due to proper sanitization or safe headers.',
+        'needs_review': 'Findings with incomplete evidence flagged for manual security review.',
+        'all': 'Complete list of findings evaluated during the security scan.'
+    };
+
+    if (titleEl) titleEl.textContent = categoryTitles[categoryName] || 'Categorized Findings';
+    if (subtitleEl) subtitleEl.textContent = categorySubtitles[categoryName] || 'Filtered View';
+
+    categoryView.classList.remove('hidden');
+    renderCategoryFindings();
+    categoryView.scrollIntoView({ behavior: 'smooth' });
 }
 
 
 /**
- * Filters findings based on activeTab and renders cards.
+ * Closes Category Overlay View and returns to main summary view.
  */
-function renderActiveTabFindings() {
-    if (!currentScanData) return;
+function closeCategoryView() {
+    const categoryView = document.getElementById('category-view');
+    if (categoryView) categoryView.classList.add('hidden');
+}
 
-    const container = document.getElementById('findings-container');
+
+/**
+ * Filters findings based on activeCategory and renders finding cards into category-findings-container.
+ */
+function renderCategoryFindings() {
+    const container = document.getElementById('category-findings-container');
+    if (!container) return;
+
     container.innerHTML = '';
+
+    if (!currentScanData || !currentScanData.reviewed_findings) {
+        container.innerHTML = `
+            <div class="card empty-state">
+                <h3>No scan data available yet. Please run a scan first.</h3>
+            </div>
+        `;
+        return;
+    }
 
     const allFindings = currentScanData.reviewed_findings || [];
     
     let filtered = [];
-    if (activeTab === 'confirmed') {
+    if (activeCategory === 'confirmed') {
         filtered = allFindings.filter(f => {
             const dec = f.llm_review?.decision || (f.llm_assessment?.is_plausible ? 'confirmed' : 'rejected');
             return dec === 'confirmed';
         });
-    } else if (activeTab === 'discarded') {
+    } else if (activeCategory === 'discarded') {
         filtered = allFindings.filter(f => {
             const dec = f.llm_review?.decision || (f.llm_assessment?.is_plausible ? 'confirmed' : 'rejected');
             return dec === 'rejected' || dec === 'discarded';
         });
-    } else if (activeTab === 'needs_review') {
+    } else if (activeCategory === 'needs_review') {
         filtered = allFindings.filter(f => {
             const dec = f.llm_review?.decision || (f.llm_assessment?.is_plausible ? 'confirmed' : 'rejected');
             return dec === 'needs_review';
@@ -284,7 +344,7 @@ function renderActiveTabFindings() {
     if (filtered.length === 0) {
         container.innerHTML = `
             <div class="card empty-state">
-                <h3>No findings in this section (${activeTab.toUpperCase().replace('_', ' ')}).</h3>
+                <h3>No findings in category: ${activeCategory.toUpperCase().replace('_', ' ')}.</h3>
             </div>
         `;
         return;
