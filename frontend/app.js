@@ -263,6 +263,7 @@ function renderDashboardSummary(data) {
 function openCategoryView(categoryName) {
     activeCategory = categoryName;
 
+    const mainSummary = document.getElementById('main-summary-view');
     const categoryView = document.getElementById('category-view');
     const titleEl = document.getElementById('category-view-title');
     const subtitleEl = document.getElementById('category-view-subtitle');
@@ -286,18 +287,26 @@ function openCategoryView(categoryName) {
     if (titleEl) titleEl.textContent = categoryTitles[categoryName] || 'Categorized Findings';
     if (subtitleEl) subtitleEl.textContent = categorySubtitles[categoryName] || 'Filtered View';
 
+    // Hide Main Homepage Summary View & Show Only Dedicated Category View Page
+    if (mainSummary) mainSummary.classList.add('hidden');
     categoryView.classList.remove('hidden');
+    
     renderCategoryFindings();
-    categoryView.scrollIntoView({ behavior: 'smooth' });
+    window.scrollTo({ top: 0, behavior: 'smooth' });
 }
 
 
 /**
- * Closes Category Overlay View and returns to main summary view.
+ * Closes Category Overlay View and returns to main homepage summary view.
  */
 function closeCategoryView() {
     const categoryView = document.getElementById('category-view');
+    const mainSummary = document.getElementById('main-summary-view');
+
     if (categoryView) categoryView.classList.add('hidden');
+    if (mainSummary) mainSummary.classList.remove('hidden');
+    
+    window.scrollTo({ top: 0, behavior: 'smooth' });
 }
 
 
