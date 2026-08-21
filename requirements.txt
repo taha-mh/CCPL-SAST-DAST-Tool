@@ -1,5 +1,9 @@
-semgrep
 fastapi
 uvicorn[standard]
 pydantic
 httpx
+requests
+python-dotenv
+openai
+python-owasp-zapv2.4
+semgrep
